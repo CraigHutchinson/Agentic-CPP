@@ -1,8 +1,8 @@
 # Agentic-CPP
 
-AI agent personas for C++ development: an authoring persona that front-loads standards before writing, an architect reviewer that works against code diffs and design plans, a rewriter that applies findings, and a project bootstrapper. Shared reference material covers modernisation, idioms, commenting hygiene, and anti-patterns.
+AI agent personas for C++17 development, for use with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Cursor](https://cursor.com).
 
-Designed for use with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Cursor](https://cursor.com).
+**cpp-write** authors to standard before you start. **cpp-review** catches L0--L3 issues in code diffs and design plans. **cpp-simplify** rewrites from findings. **cpp-project-init** bootstraps a new project. Shared C++17 reference material (modernisation, idioms, commenting hygiene, anti-patterns) is loaded by all four.
 
 ---
 
