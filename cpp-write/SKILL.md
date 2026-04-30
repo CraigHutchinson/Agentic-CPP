@@ -21,6 +21,20 @@ Invoke proactively when the task includes any of:
 
 Skip for: one-line bug fixes, pure comment or wording edits, mechanical renames with zero semantic delta, test-only changes that add no production surface.
 
+## Gaps and assumptions
+
+When a design choice is not covered by the loaded references or the project's AGENTS.md / CLAUDE.md, do not silently pick the more familiar or "safe-looking" option. Surface the gap:
+
+1. **Name the choice** -- state the two or three realistic options concisely (a sentence each).
+2. **State the trade-offs** -- type-safety, allocator awareness, testability, ABI stability, migration cost, Unity constraint applicability.
+3. **Ask before writing** -- "I don't see a directive for this; which do you prefer?" A brief answer unblocks authoring and gets captured for future reference.
+
+What this prevents: one pass of "wrong" code followed by a review finding, followed by a rewrite. The ask costs 30 seconds; the rewrite costs a cycle.
+
+When the gap is minor enough that writing both variants in the file would help the user decide, write the shorter one as a placeholder with a clearly labelled `// [GAP: describe choice]` comment, and ask the question inline.
+
+**Do not assume** the modernised option is always preferred. Some modules have explicit freeze policies, Unity-specific type constraints (see modernisation-playbook.md > Project-specific type overlay), or ABI stability requirements that make the standard-library version wrong even when it looks cleaner.
+
 ## Reference load (mandatory -- before writing any code)
 
 Load all four references in order before generating any code. They are the shared set also used by `cpp-review` and `cpp-simplify`; code written without them will not survive a review pass.

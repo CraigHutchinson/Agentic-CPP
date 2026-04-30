@@ -23,6 +23,18 @@ Also invoke in **plan review mode** against design documents, implementation pla
 
 Skip for: pure bug fixes, test-only changes, mechanical renames with zero semantic delta, formatting / whitespace cleanups.
 
+## Gaps and assumptions
+
+When a finding depends on a design choice that the loaded references do not cover, do not raise an assertion as if the directive exists. Surface the ambiguity instead:
+
+1. **Name the gap** -- which rule or policy is missing ("the idiom-checklist has no entry for X-pattern; modernisation-playbook does not specify the preferred form in pre-kernel layers").
+2. **Name the realistic options** -- two or three candidates with a one-sentence trade-off each.
+3. **Ask rather than assert** -- "No directive covers this; the safer path is Y, but Z is equally consistent with the codebase -- which do you prefer?"
+
+**MUST findings require a directive.** Never raise a MUST finding based on reviewer preference alone. A MUST that survives a five-minute conversation with the author must be able to cite: a loaded reference rule, a named AGENTS.md / CLAUDE.md clause, or an explicit project standard. If the only justification is "I think this is cleaner", downgrade to SHOULD or drop.
+
+**Vigilance on silent assumptions.** The most common failure mode is assuming the modern form (e.g. `std::optional`, `core::array_ref`, `[[nodiscard]]`) is always preferred. Check the project-specific type overlay and any module-level freeze policy before asserting it.
+
 ## Invocation
 
 The skill's `allowed-tools` frontmatter restricts the persona to read-only operations (`Read`, `Glob`, `Grep`, `Bash` for git diff inspection). To run as a separate subagent with its own context window:
@@ -646,6 +658,54 @@ Treat the output as a discussion, not a checklist:
 3. Treat NICE items as future-PR fodder; cherry-pick the ones that align with current work.
 4. Add PRE-EXISTING items to the team's tech-debt backlog if they aren't already tracked.
 5. Update `../cpp/references/anti-patterns.md` if any findings get rejected for reasons that would generalise.
+
+## Iterative review mode
+
+Activate when the user requests "iterate until clean" or "keep going until no MUST / SHOULD findings remain".
+
+### Pass loop
+
+1. Run a full review pass per the layered framework (L0 → L3). Emit findings in the standard numbered format, labelled `Pass N`.
+2. After each pass: apply all MUST findings immediately (the reviewer proposes the fix; the user or the `cpp-simplify` skill applies it). For SHOULD findings, ask which to accept before applying. Record any gap-or-assumption questions from this pass before proceeding.
+3. Re-read the changed surface (not the full diff) for the next pass. Only re-check the hunks that changed plus their callers -- avoid re-raising findings on unchanged code.
+4. Stop when: no MUST findings remain AND either (a) no SHOULD findings remain, or (b) all remaining SHOULDs have been explicitly deferred by the user.
+
+**Iteration cap**: stop automatically at 5 passes and report that the remaining findings require author judgement or a design change the reviewer cannot propose unilaterally. Do not loop silently beyond 5.
+
+### Review Retrospective
+
+Emit at the end of the final pass, before any phase-handoff paragraph.
+
+```
+## Review Retrospective
+
+### Iteration log
+
+| Pass | MUST found | MUST fixed | SHOULD found | SHOULD accepted | Gap / assumption questions |
+|------|-----------|------------|-------------|-----------------|---------------------------|
+|  1   |           |            |             |                 |                           |
+|  N   |           |            |             |                 |                           |
+
+### Decisions made without a directive
+
+List each choice the reviewer made by assumption because no loaded reference covered it.
+For each: state the choice made, the alternative considered, and the finding or recommendation it produced.
+These are the entries most worth capturing in references/ or AGENTS.md.
+
+### Open items after final pass
+
+Remaining SHOULDs deferred by the user, with tracker references if supplied.
+PRE-EXISTING items surfaced but out of scope for this PR.
+
+### Phase handoff
+
+[One paragraph. Summarise what this surface looks like now vs. before the review,
+ what the next phase of work is, and which open items from this retrospective should
+ be re-evaluated as input to that phase. If background phases are viable (e.g. a
+ clang-tidy or simplification pass can run concurrently), name them explicitly.]
+```
+
+The retrospective is a re-access opportunity: the author can read it, redirect any deferred items into a follow-up ticket, and use the "Decisions made without a directive" table to decide which assumptions are worth encoding as new reference material.
 
 ## Folding fixes into the chain
 
