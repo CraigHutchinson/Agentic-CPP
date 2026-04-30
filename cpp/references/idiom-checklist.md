@@ -326,3 +326,5 @@ private:
 | `#ifndef` include guard in a new file (codebase uses `#pragma once`) | Inconsistency; verbose; guard names can collide | **NICE** |
 | Corresponding `.cpp` does not include its own `.h` first | Hides missing-include bugs in the header from other TUs | **NICE** |
 | `private:` section declared before `public:` | Forces callers to scroll past implementation detail to find the API | **NICE** |
+
+*Extend any section above when a new idiom, reinvention-catalogue entry, or file-organisation rule is validated across multiple PRs. After extending this file, commit and push -- see [Contributing](../../README.md#contributing).*

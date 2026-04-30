@@ -103,8 +103,29 @@ cpp-simplify             ← apply Rewrite Brief
 
 ## Contributing
 
-The `cpp/references/` files are the shared knowledge base. Improvements to the reference material (new reinvention catalogue entries, updated modernisation tier tables, additional anti-patterns) benefit all four skills simultaneously.
+The `cpp/references/` files are the shared knowledge base. Improvements to any of them benefit all four skills simultaneously and should be pushed back to this repo so the whole team gets the update.
 
-The **learnings loop** in `cpp-review` feeds rejected findings back into `anti-patterns.md` so the reviewer becomes more accurate over time without re-tuning the skill prompt.
+### When to extend each file
 
-Pull requests welcome. Follow the commit message conventions in the global `CLAUDE.md` authoring hygiene section if available; otherwise: `[verb] [noun] -- [why, not what]`.
+| File | Trigger |
+|---|---|
+| `anti-patterns.md` | A finding type is rejected with the same reason on two or more PRs |
+| `modernisation-playbook.md` | A new safe-modernisation pattern is validated and proven consistent |
+| `idiom-checklist.md` | A new project utility enters the reinvention catalogue, or an API design smell is confirmed |
+| `commenting-hygiene.md` | A recurring comment anti-pattern or suppression is identified |
+
+### Commit workflow
+
+After extending any reference file, commit and push immediately so the change is live for the whole team:
+
+```bash
+git -C ~/.cursor/skills add cpp/references/<filename>.md
+git -C ~/.cursor/skills commit -m "<filename>: <what changed> -- <why>"
+git -C ~/.cursor/skills push
+```
+
+Commit message convention: name the file, state the change (suppress / add / update), and give the one-line reason -- the same "WHY not WHAT" rule that applies to all code commits. The file history becomes the team's accumulated review judgement.
+
+### Skill files
+
+Changes to `SKILL.md` files (new sections, updated invocation patterns, new worked examples) follow the same workflow. Pull requests welcome for substantial changes.

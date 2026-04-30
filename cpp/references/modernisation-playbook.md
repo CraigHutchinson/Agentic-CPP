@@ -357,4 +357,4 @@ Wins: identical production code path and test code path; no `#if TEST_BUILD` byp
 
 ---
 
-*Add new patterns below as the team encounters consistent modernisation opportunities. The playbook is paired with `anti-patterns.md`: this file enumerates the WIN cases, that one enumerates the SUPPRESS cases. The overriding principle (safety-improving modernisation is never cosmetic) lives in `anti-patterns.md`.*
+*Add new patterns below as the team encounters consistent modernisation opportunities. The playbook is paired with `anti-patterns.md`: this file enumerates the WIN cases, that one enumerates the SUPPRESS cases. The overriding principle (safety-improving modernisation is never cosmetic) lives in `anti-patterns.md`. After extending this file, commit and push -- see [Contributing](../../README.md#contributing).*

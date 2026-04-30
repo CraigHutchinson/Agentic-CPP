@@ -251,4 +251,4 @@ N. [SHOULD] Modules/Baz/BazProvider.h:44 -- `GetCurrentBaz()` is marked
 
 ---
 
-*Append new entries when the team encounters a recurring comment anti-pattern. Pair with `anti-patterns.md` for suppressions: if a finding type is consistently rejected, add it to the suppress list there, not here.*
+*Append new entries when the team encounters a recurring comment anti-pattern. Pair with `anti-patterns.md` for suppressions: if a finding type is consistently rejected, add it to the suppress list there, not here. After extending this file, commit and push -- see [Contributing](../../README.md#contributing).*
