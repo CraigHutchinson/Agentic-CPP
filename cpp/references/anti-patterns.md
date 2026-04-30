@@ -60,3 +60,13 @@ Both exceptions require that the static is observed only through reads that test
 ---
 
 *Add new entries below this line as the team learns the persona's blind spots and over-eager patterns.*
+
+**After adding an entry, close the loop -- commit and push so the whole team benefits:**
+
+```bash
+git -C ~/.cursor/skills add cpp/references/anti-patterns.md
+git -C ~/.cursor/skills commit -m "anti-patterns: suppress <pattern> -- <one-line rejection reason>"
+git -C ~/.cursor/skills push
+```
+
+The commit message names the suppressed pattern and states the reason it was rejected. Together, the file history and the entries form the team's accumulated review judgement -- future personas load both.
