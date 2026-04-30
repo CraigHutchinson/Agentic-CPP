@@ -1,0 +1,11 @@
+# Non-cpp skills -- not part of Agentic-CPP
+prism/
+update-project-schedule/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor swap files
+*.swp
+*.swo
