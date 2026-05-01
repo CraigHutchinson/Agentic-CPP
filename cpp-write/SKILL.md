@@ -69,6 +69,7 @@ Apply each step in order before and during writing. The steps mirror the four la
    - Process-lifetime global state → derive from `Singleton<T>` at the nearest module boundary
    - Feature-local helper → inside the feature module, not a global utility header
 4. **Check for a module-level `AGENTS.md`** in the target directory. Module files can override global conventions; read before writing.
+5. **Simplification pre-flight.** Before designing any file or type, load `../cpp/references/idiom-checklist.md > Simplification and DRY` and run the signal table. If the proposed design triggers more than one signal (single-implementation abstraction, helper for a single call site, type count exceeding problem responsibility count), stop and ask: is there a simpler correct shape? The cheapest fix is the one that happens before the first line is written.
 
 ### Step 2 -- File design (before writing the first line of code)
 

@@ -38,6 +38,7 @@ The reference material encodes these themes across all four skills:
 | **Type-system contracts** | Encode invariants in types, not prose -- `[[nodiscard]]`, `noexcept`, `static_assert` |
 | **Comment hygiene** | WHY not WHAT; no phase/roadmap labels; public surfaces need doc comments |
 | **Modernisation** | Prefer C++17 idioms and project-specific types (`core::*`) over raw-standard equivalents |
+| **Simplification / DRY** | The simplest correct shape is the right shape; repeated structure signals a missed abstraction |
 | **Globals and testability** | File-statics and latched singletons create cross-test order-dependence |
 | **Testability paths** | Additive API first, then structural refactor, then (last resort) signature change |
 | **Semantic contract drift** | New API that weakens an existing type's implicit guarantee requires user discussion |
@@ -46,6 +47,21 @@ The reference material encodes these themes across all four skills:
 | **Plan first** | Run plan-review mode before writing code -- L0/L1 fixes cost nothing at the design stage |
 | **Gaps and assumptions** | Ask rather than assume when no directive covers a design choice |
 | **Iterative review** | Loop until clean; retrospective captures decisions-without-directive for encoding |
+
+---
+
+## Review layers (L0–L3)
+
+All four skills share a layered review framework applied by `cpp-review` and mirrored proactively by `cpp-write`. Each layer is a strict gate: a MUST finding at any layer stops the review from descending to the next until the finding is addressed.
+
+| Layer | Name | Question | Fires on |
+|---|---|---|---|
+| **L0** | Intent / Decomposition | Is this the right thing, at the right scope, with the right complexity? | Commit message mismatches, dead scaffolding, over-engineering, simpler solution exists |
+| **L1** | Structural / Boundary | Is it structured correctly and in the right place? | Wrong abstraction, module boundary violation, DRY violation, single-impl interface |
+| **L2** | API / Contract | Is the public surface correct and complete? | Naming smells, missing `[[nodiscard]]` / `noexcept`, unencoded ordering constraints, `std::*` on project-typed API |
+| **L3** | Implementation | Is the implementation idiomatic and documented? | Legacy idioms, modernisation failures, missing ownership annotations, stale comments |
+
+`cpp-review` runs L0–L3 in code-review mode and L0–L2 in plan-review mode (L3 is skipped for plans — no implementation to inspect). A MUST at L0 or L1 defers all lower-layer findings until the structural issue is resolved; they are listed under "Deferred pending redesign" rather than dropped.
 
 ---
 

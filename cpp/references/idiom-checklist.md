@@ -34,6 +34,36 @@ Use `static_assert` to encode invariants the compiler can check at build time:
 
 Prefer `static_assert` over runtime `Assert` whenever the property is knowable at compile time.
 
+## Simplification and DRY
+
+The simplest correct design is the right design -- not the most general, not the most flexible. Apply before designing any new type, API, or module.
+
+### Simplification pre-flight
+
+Run before writing. If any signal fires, ask whether the stated goal can be achieved with fewer moving parts before proceeding.
+
+| Signal | What it suggests |
+|---|---|
+| New abstraction has exactly one concrete implementation | Pre-emptive indirection; collapse to a concrete type until a second implementation appears |
+| New helper exists solely to satisfy a single call site | The logic may belong at the call site; extract only when a second caller appears |
+| Configurable, general-purpose system solves a specific bounded problem | Generality is speculative; prefer the specific form and generalise when the second use-case arrives |
+| New type count exceeds the distinct responsibilities in the problem statement | Wrong decomposition seam; the implementer may have solved a more general problem than asked |
+| Implementation is longer than the problem statement | Complexity may be incidental (over-engineering) rather than essential (domain complexity) |
+| A new `Manager`, `Handler`, or `Helper` class with no clear invariant | Name signals a grab-bag; split by responsibility or collapse to free functions |
+
+### DRY check
+
+Identify repeated structure before, during, and after writing:
+
+- **Two blocks with the same control flow, different literal values** → candidate for a loop, template, or named helper.
+- **Parallel class hierarchies growing in lockstep** → candidate for a single parameterised type or a shared base.
+- **The same condition checked in multiple call sites** → candidate for a named predicate or a type-system encoding.
+- **Copy-pasted code with one field changed** → almost always a loop or a template parameter.
+
+**DRY is not reinvention.** Reinvention is duplicating an *existing project utility*; DRY is duplicating logic *within the current change*. Both are findings; the remediation differs: reinvention → use the existing utility; DRY → extract or parameterise within the new code.
+
+**Do not over-apply.** Three similar lines are better than a premature abstraction. Raise only when the extracted form is genuinely simpler to read and maintain than the instances — not merely shorter.
+
 ## API design
 
 ### Foundational rules
