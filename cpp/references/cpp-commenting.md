@@ -6,7 +6,7 @@ The guiding principle is **WHY over WHAT**: comments document intent, contracts,
 
 ## Authority and prior art
 
-- **Doxygen** -- canonical tag reference; the `/** */` block style is the Doxygen-recognised multi-line form. Unity's codebase uses this style for public API documentation.
+- **Doxygen** -- canonical tag reference; the `/** */` block style is the Doxygen-recognised multi-line form for public API documentation.
 - **LLVM Coding Standards** ("self-documenting code") -- a comment that restates the code adds noise; it ages badly and eventually contradicts.
 - **C++ Core Guidelines NL.1 / NL.2** -- "Don't say in comments what can be said in code"; comments explain intent and rationale, not mechanics.
 - **AGENTS.md `Authoring & Review Hygiene`** -- "WHY not WHAT"; prohibits roadmap / phase-narrative comments ("Phase D will fix this").
@@ -173,7 +173,7 @@ class Bar {};
  *             underlying <call> throws; this is intentional because [reason].
  * @see        RelatedFunction
  */
-[[nodiscard]] std::optional<Foo> TryResolve(core::string_ref name) noexcept;
+[[nodiscard]] std::optional<Foo> TryResolve(std::string_view name) noexcept;
 ```
 
 **Omit `@param` when**: the parameter name + type together leave no ambiguity and the function has a clear brief. Never omit when the parameter has non-obvious directionality, units, or a null/empty contract.
@@ -215,65 +215,9 @@ Raise **no** finding for absent comments on any of the following:
 
 ---
 
-## Unity-specific comment conventions
+## Project-specific conventions
 
-These are additional to generic Doxygen hygiene.
-
-### `// LEGACY:` marker
-
-```cpp
-// LEGACY: pre-dates core::string; kept for ABI compatibility with Platform X.
-//         Migrate callsites to StrICmp() when touching this module. [TICKET-NNN]
-const char* LegacyStringCompare(const char* a, const char* b);
-```
-
-Use `// LEGACY: [reason] [ticket]` on any intentionally preserved legacy pattern. The comment makes clear this is deliberate, not overlooked, and signals to the next reader that there is a migration path.
-
-### `// [TICKET-NNN]` on workarounds
-
-Every workaround, suppression, and deviation from the playbook must carry a tracker reference. The comment should explain the constraint that forced the deviation:
-
-```cpp
-// [TICKET-12345] core::hash_map not available in this pre-kernel layer;
-// using std::unordered_map here until NativeKernel bootstrap is resolved.
-std::unordered_map<core::string_ref, int> m_EarlyMap;
-```
-
-### `PolicyViolationAllowList` entry comments
-
-Every entry added to `Tools/PolicyViolationDetector/src/PolicyViolationAllowList.gen.h` must have a companion comment naming:
-1. Why the violation exists.
-2. The rollout plan to retire it (or "permanent" with justification).
-3. The tracking ticket.
-
-The allow list is explicitly designed to shrink over time; an uncommented entry has no retirement pressure.
-
-### Memory ownership on raw pointer members
-
-```cpp
-class Renderer
-{
-    Device* m_Device;          // non-owning; lifetime managed by RenderSystem
-    Texture* m_ScratchTexture; // owning; allocated in ctor, freed in dtor
-};
-```
-
-Every raw pointer member in a new or changed class must carry an ownership annotation. The acceptable forms are: `// owning`, `// non-owning`, `// non-owning; lifetime exceeds this object`, `// optional-owning (nullptr when inactive)`.
-
-### `#if ENABLE_UNIT_TESTS_WITH_FAKES` bypass note
-
-```cpp
-/** Returns the current platform context.
- *
- * @note In test builds (ENABLE_UNIT_TESTS_WITH_FAKES), the cached value
- *       is bypassed and recomputed each call so fixtures can install fakes.
- *       The production path caches on first call. If you see this note,
- *       prefer migrating the accessor to Singleton<T> (see modernisation-
- *       playbook.md > Globals, singletons, and testability seam).
- */
-```
-
-Any accessor that has a test-only bypass branch **must** document it in the public `@note`. Undocumented bifurcation causes mysterious test failures.
+If an org overlay is present (`../org/references/`), load it after this file. The overlay defines project-specific comment markers (e.g., `// LEGACY:` conventions), policy allowlist entry requirements, and memory-ownership annotation forms.
 
 ---
 
@@ -282,10 +226,10 @@ Any accessor that has a test-only bypass branch **must** document it in the publ
 ### Example A -- missing brief on a new class (SHOULD)
 
 ```text
-N. [SHOULD] Runtime/Foo/FooManager.h:12 -- `FooManager` has no doc comment.
+N. [SHOULD] Module/Foo/FooManager.h:12 -- `FooManager` has no doc comment.
    A reader cannot tell from the name alone whether this is the owner of
    all Foo instances, a registry, a factory, or a coordination layer.
-   Evidence: commenting-hygiene.md SHOULD rule: "class has no brief".
+   Evidence: cpp-commenting.md SHOULD rule: "class has no brief".
    Suggested:
      /** Owns and coordinates the lifecycle of all active Foo objects
       *  for the current process. One instance per process; access via
@@ -298,11 +242,11 @@ N. [SHOULD] Runtime/Foo/FooManager.h:12 -- `FooManager` has no doc comment.
 ### Example B -- stale comment (MUST)
 
 ```text
-N. [MUST] Runtime/Bar/BarCache.cpp:88 -- the comment says "returns nullptr
+N. [MUST] Module/Bar/BarCache.cpp:88 -- the comment says "returns nullptr
    on cache miss" but the function signature changed to return
    std::optional<Bar> in this PR; a caller reading the comment will
    misuse the API.
-   Evidence: commenting-hygiene.md MUST rule: "comment contradicts current code";
+   Evidence: cpp-commenting.md MUST rule: "comment contradicts current code";
              line 88 comment vs. line 31 declaration.
    Suggested: update the comment to describe the optional return and what
               std::nullopt signifies.
@@ -315,7 +259,7 @@ N. [SHOULD] Modules/Baz/BazProvider.h:44 -- `GetCurrentBaz()` is marked
    noexcept but internally calls `LegacyResolver()`, which is not noexcept.
    A caller who catches exceptions will not see the failure; the process
    terminates instead.
-   Evidence: commenting-hygiene.md SHOULD rule: "noexcept wraps potentially-
+   Evidence: cpp-commenting.md SHOULD rule: "noexcept wraps potentially-
              throwing call with no @note documenting terminate-on-failure".
    Suggested:
      /**
@@ -328,4 +272,4 @@ N. [SHOULD] Modules/Baz/BazProvider.h:44 -- `GetCurrentBaz()` is marked
 
 ---
 
-*Append new entries when the team encounters a recurring comment anti-pattern. Pair with `anti-patterns.md` for suppressions: if a finding type is consistently rejected, add it to the suppress list there, not here. After extending this file, commit and push -- see [Contributing](../../README.md#contributing).*
+*Append new entries when the team encounters a recurring comment anti-pattern. Pair with `cpp-anti-patterns.md` for suppressions: if a finding type is consistently rejected, add it to the suppress list there, not here. After extending this file, commit and push -- see [Contributing](../../README.md#contributing).*

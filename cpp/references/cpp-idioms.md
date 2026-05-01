@@ -60,14 +60,14 @@ Common shapes and their standard forms:
 
 | Shape | Standard form |
 |---|---|
-| Pointer + count, read-only iteration | `core::array_ref<T>` (Unity) / `std::span<T>` (C++20) — has `begin / end / size / data / operator[]` for free |
-| Compile-time-sized fixed array | `core::fixed_array<T, N>` / `std::array<T, N>` |
+| Pointer + count, read-only iteration | project span type / `std::span<T>` (C++20) — has `begin / end / size / data / operator[]` for free |
+| Compile-time-sized fixed array | project fixed-array type / `std::array<T, N>` |
 | "Either a value or nothing" | `std::optional<T>` |
 | Two related values returned together | a named struct (`pair` carries no semantic information at the call site) |
 | Type-erased "one of N alternative types" | `std::variant<...>` |
-| Borrowed iteration over an existing contiguous container | `core::array_ref<T>` constructed from the container; do not wrap |
+| Borrowed iteration over an existing contiguous container | project span type constructed from the container; do not wrap |
 
-The smell, concretely: a class named `FooThingList` / `FooValueRange` / `FooViewOfBars` whose entire body is a constructor taking `(T*, size_t)` plus `begin / end / size`. That is `core::array_ref<T>` with extra steps. The wrapper is justified only when it carries semantics the generic form cannot — e.g. an invariant on the contents (`SortedAssetIds` is non-empty and sorted), a non-trivial constructor that validates, or a method whose meaning depends on knowing the elements are `T` specifically.
+The smell, concretely: a class named `FooThingList` / `FooValueRange` / `FooViewOfBars` whose entire body is a constructor taking `(T*, size_t)` plus `begin / end / size`. That is a project span type with extra steps. The wrapper is justified only when it carries semantics the generic form cannot — e.g. an invariant on the contents (`SortedAssetIds` is non-empty and sorted), a non-trivial constructor that validates, or a method whose meaning depends on knowing the elements are `T` specifically.
 
 Raise as **SHOULD**: replace with the standard form. Cite the standard type and what semantics, if any, the wrapper carries that the standard type does not — the author then either justifies the wrapper or removes it.
 
@@ -123,10 +123,10 @@ These patterns are observable at the declaration level and should be caught at L
 |---|---|---|
 | Boolean behaviour selector | `void Process(bool fast)` where `true` and `false` paths do fundamentally different things | SHOULD: two named functions (`ProcessFast()` / `ProcessNormal()`) or a `enum class Speed` overload. Boolean params invert silently. |
 | Homogeneous parameter list | Three or more adjacent parameters of the same type: `f(int x, int y, int z)` | SHOULD: named parameter struct. Argument-swap bugs are invisible to the compiler and the call site. |
-| Primitive obsession on API boundary | `int userId`, `bool isEditor`, `core::string assetPath` each crossing multiple public APIs as a raw type | SHOULD: strong-type with a thin `enum class` or a named wrapper. Each call site becomes self-documenting; wrong-type bugs move to compile time. |
-| `std::pair` return where a named struct exists | `std::pair<bool, Foo>` or `std::pair<core::string, int>` as a return type | SHOULD: named struct or `std::optional<Foo>`. `pair.first` / `pair.second` at the call site carries no semantic information. |
+| Primitive obsession on API boundary | `int userId`, `bool isEditor`, `std::string assetPath` each crossing multiple public APIs as a raw type | SHOULD: strong-type with a thin `enum class` or a named wrapper. Each call site becomes self-documenting; wrong-type bugs move to compile time. |
+| `std::pair` return where a named struct exists | `std::pair<bool, Foo>` or `std::pair<std::string, int>` as a return type | SHOULD: named struct or `std::optional<Foo>`. `pair.first` / `pair.second` at the call site carries no semantic information. |
 | Output parameter instead of return value | `void GetResult(Result& out)` when the function always sets `out` | SHOULD: return `Result` by value (rely on NRVO/move) or `std::optional<Result>` if the function can fail. |
-| Non-const reference parameter that is output-only | `void Populate(core::vector<Foo>& out)` that always clears and refills `out` | SHOULD: return `core::vector<Foo>` by value; a non-const ref implies in-out, which is misleading when only out. |
+| Non-const reference parameter that is output-only | `void Populate(std::vector<Foo>& out)` that always clears and refills `out` | SHOULD: return `std::vector<Foo>` by value; a non-const ref implies in-out, which is misleading when only out. |
 
 ### Naming and call-site readability
 
@@ -134,95 +134,64 @@ These patterns are observable at the declaration level and should be caught at L
 - **Is / Has / Can** prefix for predicates that return `bool`: `IsEnabled()`, `HasPendingWork()`.
 - **Get** prefix only for cheap, non-allocating observers that return an existing value. Use `Compute`, `Build`, or `Resolve` when the function does real work. Callers make performance assumptions from the name.
 - **Try** prefix for functions that may fail and return `std::optional<T>` or a bool + out-param: `TryResolve`, `TryParse`. Makes the failure path visible at the call site.
-- Avoid Hungarian notation for non-member names; use it for member variables (`m_Name`) and statics (`s_Cache`, `g_Instance`) where the Unity codebase already establishes it.
+- Avoid Hungarian notation for non-member names; use it for member variables (`m_Name`) and statics (`s_Cache`, `g_Instance`) where the project codebase establishes it.
 
-## Reinvention catalogue (Unity-specific)
+### Encapsulation: free functions that should be static members
 
-Quick-reference of the helpers most commonly reinvented by new contributors. Grep here **before** approving any new local helper of the same shape.
+A free function whose name carries the class as a prefix (`<Class><Method>(...)`, `<Class>_<Method>(...)`) or whose only meaningful argument is a nested type of one class (`<Class>::<NestedEnum>`, `<Class>::<NestedStruct>`) is a static member in disguise. Move it inside the class.
 
-### String operations -- `Modules/NativeKernel/Include/NativeKernel/Utilities/Word.h`
+| Smell (free function shape) | Better as | Why |
+|---|---|---|
+| `FooBarToString(Foo::Bar)` | `Foo::BarToString(Foo::Bar)` (or `Foo::ToString(Foo::Bar)`) | Class scope removes the redundant `Foo` prefix; reads cleaner; discoverable via `Foo::` completion. |
+| `FooModeValidValues()` returning a list of `Foo::Mode` tokens | `Foo::ModeNames()` static member | The list belongs to `Foo`; the free function pretends it doesn't. |
+| `MakeFooFromArgv(int, char**)` with no other dependencies | `Foo::FromArgv(int, char**)` static factory | Factory is a class concern; the free function hides the relationship. |
+| `IsFooReady(const Foo&)` taking `Foo` by const-ref and reading only its public state | `bool Foo::IsReady() const` | The free-function form forces a `(ctx)` argument that the member form makes implicit; the member is what call sites want to write. |
 
-| If the new code does ... | Use this instead |
+**Why it matters:**
+
+- **Discoverability.** `Foo::` IDE completion surfaces every operation on `Foo` in one list. Free functions named `Foo*` only appear if the caller already knows the prefix to type.
+- **Naming.** Class scope eats the redundant prefix. `ProcessContext::ModeNames()` reads as a property of the class; `ProcessContextModeValidValues()` reads as if the class name and the operation are accidentally adjacent strings.
+- **Access.** A static member can read the class's private statics or call its private helpers; a free function cannot, which forces a wider public surface than the operation actually needs.
+- **Coupling is declared.** A static member states "this operation is part of `Foo`". A free function in the same TU states nothing — the relationship is implicit and easy to break (the free function and the class can drift into separate files, separate modules, separate translation phases).
+
+**When to keep the free function (legitimate exceptions):**
+
+- The function lives in a *different module* and uses the class but is not part of its API. A logging helper `LogFooState(const Foo&)` in the logging module is correctly a free function — it belongs to logging, not to `Foo`.
+- The function operates *across* multiple classes' nested types, so no single class is the natural owner: `bool ModesAreCompatible(Foo::Mode, Bar::Mode)`.
+- The function exists as a deliberate **singleton-deferring wrapper** over a member: `bool IsFooReady() { return Foo::GetInstance().IsReady(); }`. The instance form is the member; the no-arg form is the free wrapper. (See the dual-form predicate pattern in `cpp-modernisation.md > Globals, singletons, and testability seam`.)
+- The function is a non-virtual extension that genuinely cannot be a member (e.g. an `operator<<` for streaming, an `swap` overload found by ADL).
+
+**Finding shape (for use in review reports):**
+
+| Severity | Trigger |
 |---|---|
-| Case-insensitive byte compare | `StrICmp(a, b)` |
-| Prefix / suffix check | `BeginsWith(s, p)`, `EndsWith(s, p)` (+ `*CaseInsensitive` variants) |
-| Numeric-string predicate | `IsStringNumber`, `IsStringInteger`, `IsStringUnsignedInteger` |
-| Parse integer from string with overflow check | `StringToIntCheckedSInt8/16/32/64`, `...UInt8/...` |
-| Integer to string | `IntToString`, `UnsignedIntToString`, `Int64ToString`, `UnsignedInt64ToSIByteUnitString` |
-| Concatenate with separator | `ConcatWithSeparator(lhs, sep, rhs)` |
-| Format-style string construction | `core::Format(...)` -- not `snprintf` + manual `core::string` build |
+| **SHOULD** | Free function in the same TU/header as `Foo`, named `Foo<Suffix>(...)` or taking `Foo::<NestedType>` as its primary argument, with no instance state of its own and no legitimate-exception justification. Move to `static` member of `Foo`; drop the redundant `Foo` prefix from the name. |
+| **NICE** | Free function operating on a `Foo` argument by const-ref that only reads public observers — could be a const member but is not currently. Acceptable to leave if other callers benefit from the free shape (composability, ADL). Flag for awareness, not for blocking. |
 
-### Containers -- `Documentation/InternalDocs/docs/Runtime/Core/containers/`
+## Reinvention catalogue
 
-| If the new code uses ... | Prefer |
+Quick-reference of the shapes most commonly reinvented. Grep here **before** approving any new local helper of the same shape.
+
+If an org overlay is present (`../org/references/`), load it now -- org-specific utilities (project string libraries, container types, argv helpers, singletons, memory allocators) are catalogued there with exact file paths and function names.
+
+For projects without an org overlay, check these generic shapes before writing a new helper:
+
+| Shape | Check for |
 |---|---|
-| `std::string` (engine code) | `core::string` (memory label, embedded buffer) |
-| `std::string_view` parameter | `core::string_ref` (with `&&` overload `= delete` if storing) |
-| `std::vector<T>` (engine code) | `core::vector<T, kMemSomeLabel>` |
-| `std::unordered_map` | `core::hash_map<K, V>` |
-| `std::set` for small sets | `core::flat_set<T>` |
-| Span-like read-only view | `core::array_ref<T>` |
-| Stack-allocated small array | `core::fixed_array<T, N>` |
-| Long array with stable pointers | `core::block_vector<T>` |
-
-### Enum utilities -- `Modules/NativeKernel/Include/NativeKernel/Utilities/EnumFlags.h` and `EnumTraits.h`
-
-| If the new code does ... | Use this instead |
-|---|---|
-| Bitwise OR / AND / test on a scoped enum used as flags | `EnumFlags.h` helpers -- avoid casting to the underlying int type manually |
-| Enum-to-string / string-to-enum conversion or reflection | `EnumTraits.h` -- do not hand-roll a `switch` / name table |
-
-### Path operations -- `Modules/NativeKernel/Include/NativeKernel/Utilities/PathNameUtility.h`
-
-| If the new code does ... | Use this instead |
-|---|---|
-| Extract extension, directory, filename from a path string | `PathNameUtility.h` helpers |
-| Normalise, join, or compare path strings | `PathNameUtility.h` helpers -- do not roll local `std::string` string operations on paths |
-
-### Argv parsing -- `Runtime/Utilities/Argv.cpp`
-
-| If the new code does ... | Use this instead |
-|---|---|
-| Check argv flag presence | `HasArgument` |
-| Extract `-flag <value>` pair | `GetArgumentValue` (two-token form, no `=` split) |
-
-### Singletons and active-instance patterns -- `Modules/NativeKernel/Include/NativeKernel/Utilities/Singleton.h`
-
-| If the new code does ... | Use this instead |
-|---|---|
-| Hand-rolled CRTP singleton template | Inherit from the existing `Singleton<T>` template |
-| File-static `g_Instance` + `Set/GetInstance()` free functions | `Singleton<T>` provides `Create(memLabel)` / `Destroy()` / `GetInstance()` / `GetInstancePtr()` / protected `SetInstance()` |
-| Producer needs to bind an instance it allocated itself (e.g. an abstract base whose concrete subclass varies by configuration, or a constructor that takes runtime arguments) | `Singleton<T>::BindInstance(instance, memLabel)` — asserts on double-bind; transfers ownership; `Destroy()` calls `UNITY_DELETE` with the supplied label and nulls the active pointer |
-| Static instance definition macro | `DEFINE_SINGLETON_INSTANCE(MyType)` at .cpp scope |
-| Test wants to exercise mode-dependent logic without touching the production singleton | Make the logic a free function or member that takes `(const MyType&)` (or whatever non-singleton input is needed). Tests construct a stack-local concrete instance and call the `(const MyType&)` overload directly. The production no-arg form is a thin inline wrapper around `MyType::GetInstance()`. The Singleton itself stays single — tests never need to override the active instance. |
-
-The constructor of `Singleton<T>` does **not** auto-register the new object as the active instance, so tests are free to instantiate as many objects as they like on the stack and decide separately whether to bind one of them. The recommended testability shape is the dual-overload pattern in the table above; do **not** add a "scoped override" / "active-instance swap" mechanism to `Singleton<T>` itself — see `anti-patterns.md > Semantic contract weakening for testability`.
-
-### Memory allocation -- `UNITY_NEW` / `UNITY_DELETE`
-
-| If the new code does ... | Preferred form |
-|---|---|
-| `new T(args)` for a long-lived engine heap object | `UNITY_NEW(kMemSomeLabel, T)(args)` -- participates in memory profiling |
-| `delete ptr` for a Unity-allocated object | `UNITY_DELETE(ptr)` |
-| Short-lived object immediately placed under ownership | `std::make_unique<T>(args)` is acceptable for RAII-scoped objects; prefer `UNITY_NEW` when the object escapes the frame or will be stored long-term |
-
-### Memory labels
-
-| Common label | Use for |
-|---|---|
-| `kMemString` | Default for `core::string` |
-| `kMemTempAlloc` | Short-lived stack-scope allocations |
-| `kMemDefault` | Fallback when nothing more specific applies (review carefully) |
-
-When reviewing a new container or string field, expect a deliberate label choice, not the default.
+| Case-insensitive string compare | Project string utilities directory |
+| Argv flag / value extraction | Project argv or CLI utilities |
+| Path manipulation (extension, join, normalise) | Project path utilities |
+| Enum flags / enum-to-string reflection | Project enum utilities |
+| Span-like read-only view over contiguous data | `std::span<T>` (C++20) or project equivalent |
+| Process-lifetime singleton | Project singleton template |
+| Format-style string construction | Project formatting utility; avoid `snprintf` + manual string concatenation |
 
 ## Header / boundary discipline
 
 ### Project-level boundary rules
 
-- Public runtime headers (`Runtime/Misc/`) must not include `core::vector` / `core::string` -- those drag editor-only dependencies. Put helpers that need them in editor-only headers (`Editor/Src/Application/`) and forward-declare the public API.
 - Cross-platform: include paths are case-sensitive on Linux / macOS. Always match the on-disk filename casing exactly (`String.h`, not `string.h`).
-- New entries in `PolicyViolationAllowList.gen.h` should be justified in the commit message. Zero new entries is the goal; if you must add one, document the rollout that retires it.
+- If an org overlay is present, load it for project-specific boundary rules (allowed header contents, module-crossing restrictions, policy allowlist conventions).
 
 ---
 
@@ -271,7 +240,7 @@ All new headers use `#pragma once`. It is simpler, faster to compile (the compil
 - `static` member variable definitions.
 - Heavy `#include` dependencies — push them here and keep the header lean.
 - Anonymous namespace helpers that are genuinely file-local.
-- `DEFINE_SINGLETON_INSTANCE(T)` and similar definition macros.
+- Singleton static storage definitions (explicit template specialization, e.g. `template<> T* Singleton<T>::s_Instance = nullptr;`, or project equivalent).
 - Explicit template instantiations for known types: `template class Foo<int>;`
 
 ### Template implementations — the `.inl` pattern
@@ -285,16 +254,16 @@ template<typename T>
 class FooCache
 {
 public:
-    [[nodiscard]] T* TryGet(core::string_ref key) noexcept;
-    void Insert(core::string_ref key, T value);
+    [[nodiscard]] T* TryGet(std::string_view key) noexcept;
+    void Insert(std::string_view key, T value);
 private:
-    core::hash_map<core::string, T> m_Map;
+    std::unordered_map<std::string, T> m_Map;
 };
 #include "FooCache.inl"   // definitions follow
 
 // FooCache.inl — defines the template methods
 template<typename T>
-T* FooCache<T>::TryGet(core::string_ref key) noexcept
+T* FooCache<T>::TryGet(std::string_view key) noexcept
 {
     auto it = m_Map.find(key);
     return it != m_Map.end() ? &it->second : nullptr;
@@ -320,8 +289,8 @@ Explicit instantiation moves compilation cost to one TU and gives the linker a s
 #include <algorithm>       // 2. Standard library headers
 #include <optional>
 
-#include "core/string.h"   // 3. Project / engine headers (most stable last)
-#include "NativeKernel/Utilities/Word.h"
+#include "Core/String.h"   // 3. Project / engine headers (most stable last)
+#include "Core/Utilities/Word.h"
 ```
 
 Putting the corresponding header first is a hard rule (LLVM, Google): if `Foo.h` fails to include its own dependencies, `Foo.cpp` will fail to compile immediately — rather than accidentally compiling because some other header pulled them in first, hiding the bug from other TUs.
@@ -348,7 +317,7 @@ public:
 
     // 4. Public methods (most important / most called first)
     [[nodiscard]] Result DoThing() noexcept;
-    [[nodiscard]] core::string_ref GetName() const noexcept;
+    [[nodiscard]] std::string_view GetName() const noexcept;
 
 private:
     // 5. Private types (implementation details)

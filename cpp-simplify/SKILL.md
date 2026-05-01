@@ -25,16 +25,15 @@ If the Brief is incomplete, the executor emits a "Brief gap" note and stops rath
 Load these in order before touching any file. They are the same references the `cpp-review`
 persona uses, so the executor applies changes that will pass a subsequent review pass.
 
-1. `../cpp/references/anti-patterns.md`
+1. `../cpp/references/cpp-anti-patterns.md`
    -- what NOT to raise / what NOT to introduce; overriding principle for safety vs cosmetic.
-2. `../cpp/references/modernisation-playbook.md`
-   -- C++17 idiom tiers, Unity-specific idiom overlays, globals/testability seam pattern.
-3. `../cpp/references/idiom-checklist.md`
-   -- reinvention catalogue (Word.h, Argv.cpp, core:: types, Singleton<T>), API design smells,
-      file organisation rules.
-4. `../cpp/references/commenting-hygiene.md`
+2. `../cpp/references/cpp-modernisation.md`
+   -- C++17 idiom tiers, project-specific idiom overlays (if org overlay present), globals/testability seam pattern.
+3. `../cpp/references/cpp-idioms.md`
+   -- reinvention catalogue, API design smells, file organisation rules.
+4. `../cpp/references/cpp-commenting.md`
    -- MUST/SHOULD table for doc comments; stale-comment rules; roadmap-clause prohibition.
-5. `d:\UnitySrc\unity\AGENTS.md`
+5. `AGENTS.md` (repo root)
    -- repo-wide comment hygiene, commit message format, cross-platform casing, reinvention check.
 
 ## Execution steps
@@ -88,7 +87,7 @@ Work through each item in order. For each:
 1. Read the specified file:line range.
 2. Apply the change as described.
 3. Re-read the modified block to confirm it matches the intent.
-4. Check `commenting-hygiene.md` rules against the new text -- no stale doc, no roadmap clauses,
+4. Check `cpp-commenting.md` rules against the new text -- no stale doc, no roadmap clauses,
    no engineering-discipline slogans.
 
 ### Step 7 — Self-check against invariants
@@ -100,7 +99,7 @@ For each invariant in the Brief:
 - **Test suite**: Do not run the build here (the Brief specifies when to build). Instead, read the
   test file and confirm that the tests named in the Brief as "must pass" are still present and
   unmodified.
-- **Hygiene**: Re-read every modified file and apply the `commenting-hygiene.md` MUST table.
+- **Hygiene**: Re-read every modified file and apply the `cpp-commenting.md` MUST table.
   Flag any new violation as a self-check failure.
 
 ### Step 8 — Emit "Changes made" report
@@ -157,7 +156,7 @@ Rewrite Brief:
 <paste the full ## Rewrite Brief block from the review output verbatim>
 ---
 
-Repo root: d:\\UnitySrc\\unity
+Repo root: <path to repo root>
 Files to touch: <list from Brief>
 "
 )

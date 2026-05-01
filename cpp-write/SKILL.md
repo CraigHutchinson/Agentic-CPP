@@ -26,29 +26,28 @@ Skip for: one-line bug fixes, pure comment or wording edits, mechanical renames 
 When a design choice is not covered by the loaded references or the project's AGENTS.md / CLAUDE.md, do not silently pick the more familiar or "safe-looking" option. Surface the gap:
 
 1. **Name the choice** -- state the two or three realistic options concisely (a sentence each).
-2. **State the trade-offs** -- type-safety, allocator awareness, testability, ABI stability, migration cost, Unity constraint applicability.
+2. **State the trade-offs** -- type-safety, allocator awareness, testability, ABI stability, migration cost, project constraint applicability.
 3. **Ask before writing** -- "I don't see a directive for this; which do you prefer?" A brief answer unblocks authoring and gets captured for future reference.
 
 What this prevents: one pass of "wrong" code followed by a review finding, followed by a rewrite. The ask costs 30 seconds; the rewrite costs a cycle.
 
 When the gap is minor enough that writing both variants in the file would help the user decide, write the shorter one as a placeholder with a clearly labelled `// [GAP: describe choice]` comment, and ask the question inline.
 
-**Do not assume** the modernised option is always preferred. Some modules have explicit freeze policies, Unity-specific type constraints (see modernisation-playbook.md > Project-specific type overlay), or ABI stability requirements that make the standard-library version wrong even when it looks cleaner.
+**Do not assume** the modernised option is always preferred. Some modules have explicit freeze policies, project-specific type constraints (see cpp-modernisation.md > Project-specific overlay), or ABI stability requirements that make the standard-library version wrong even when it looks cleaner.
 
 ## Reference load (mandatory -- before writing any code)
 
 Load all four references in order before generating any code. They are the shared set also used by `cpp-review` and `cpp-simplify`; code written without them will not survive a review pass.
 
-1. `../cpp/references/anti-patterns.md`
+1. `../cpp/references/cpp-anti-patterns.md`
    -- what NOT to introduce; overriding principle: safety wins are never cosmetic,
       do not suppress a pattern just because migration is expensive.
-2. `../cpp/references/modernisation-playbook.md`
-   -- C++17 idiom tiers, Unity-specific type overlay (core::* over std::*),
+2. `../cpp/references/cpp-modernisation.md`
+   -- C++17 idiom tiers, project-specific type overlay (if org overlay present),
       globals/testability seam pattern.
-3. `../cpp/references/idiom-checklist.md`
-   -- reinvention catalogue (Word.h, Argv.cpp, core::*, Singleton<T>),
-      API design smells, file organisation rules.
-4. `../cpp/references/commenting-hygiene.md`
+3. `../cpp/references/cpp-idioms.md`
+   -- reinvention catalogue, API design smells, file organisation rules.
+4. `../cpp/references/cpp-commenting.md`
    -- doc comment MUST/SHOULD table, doc templates, ownership annotation conventions.
 
 Read these to understand intent, not merely to skim rules. The anti-patterns file's **Overriding principle** is more important than any individual entry in the other three: a change that reduces a class of bug or encodes an invariant in the type system is always raised, never suppressed.
@@ -62,25 +61,25 @@ Apply each step in order before and during writing. The steps mirror the four la
 **Highest-leverage step.** A utility written from scratch that already exists in the project produces a MUST finding in review and must be deleted or replaced.
 
 1. **Identify the shape** of what you are about to write -- "case-insensitive compare", "argv flag check", "global process-context cache", "small string container".
-2. **Grep the reinvention catalogue** (`../cpp/references/idiom-checklist.md > Reinvention catalogue`) for that shape. If a project utility already covers it, use that utility and stop.
+2. **Grep the reinvention catalogue** (`../cpp/references/cpp-idioms.md > Reinvention catalogue`) for that shape. If a project utility already covers it, use that utility and stop.
 3. **Locate the correct home** for new code by asking: "If a teammate searched for this functionality six months from now, where would they look?"
-   - Generic string helper → `NativeKernel/Utilities/Word.h`
-   - Argv classification → `Runtime/Utilities/Argv.cpp`
-   - Process-lifetime global state → derive from `Singleton<T>` at the nearest module boundary
+   - Generic string helper → the project's utility / kernel directory
+   - Argv classification → the project's shared utilities layer
+   - Process-lifetime global state → derive from the project's `Singleton<T>` or equivalent at the nearest module boundary
    - Feature-local helper → inside the feature module, not a global utility header
 4. **Check for a module-level `AGENTS.md`** in the target directory. Module files can override global conventions; read before writing.
-5. **Simplification pre-flight.** Before designing any file or type, load `../cpp/references/idiom-checklist.md > Simplification and DRY` and run the signal table. If the proposed design triggers more than one signal (single-implementation abstraction, helper for a single call site, type count exceeding problem responsibility count), stop and ask: is there a simpler correct shape? The cheapest fix is the one that happens before the first line is written.
+5. **Simplification pre-flight.** Before designing any file or type, load `../cpp/references/cpp-idioms.md > Simplification and DRY` and run the signal table. If the proposed design triggers more than one signal (single-implementation abstraction, helper for a single call site, type count exceeding problem responsibility count), stop and ask: is there a simpler correct shape? The cheapest fix is the one that happens before the first line is written.
 
 ### Step 2 -- File design (before writing the first line of code)
 
-Apply the **File organisation** rules in `../cpp/references/idiom-checklist.md > File organisation`.
+Apply the **File organisation** rules in `../cpp/references/cpp-idioms.md > File organisation`.
 
 - **`#pragma once`** at the top of every new header. Never use `#ifndef` guards in new code.
 - **Filename matches the primary class name** exactly, including casing. `class FooManager` → `FooManager.h` / `FooManager.cpp`. Mismatch causes a build failure on Linux/macOS; Windows masks it.
 - **One primary public type per header/source pair.** Tightly-coupled helpers (tag types, trivial RAII guards, return-value structs used only by this API) may share the file; unrelated types must not.
 - **Include order in `.cpp`**: corresponding `.h` first, then standard library, then project headers. This catches missing-include bugs in the header immediately rather than hiding them.
 - **Headers pull in only what they need.** Forward-declare rather than `#include` whenever a pointer or reference suffices.
-- **Public runtime headers** (`Runtime/Misc/`) must not `#include` `core::vector` or `core::string` -- those drag editor-only template instantiations into runtime TUs.
+- **Public runtime headers** must not `#include` heavy project container types when they can be avoided -- those drag editor-only template instantiations into runtime TUs. Prefer forward declarations and keep heavy types in editor-only headers.
 
 ### Step 3 -- Type design (before declaring any class or struct)
 
@@ -89,9 +88,9 @@ Answer these before writing the declaration:
 1. **Does this need to be a class?** A type whose every method accesses only its own members and enforces no invariant is a candidate for namespace-scope free functions. No polymorphism requirement and only one foreseeable concrete implementation → no `I` prefix abstraction.
 2. **Ownership model.** Who creates, who destroys, who holds non-owning references? Settle this before any member declaration -- it determines whether members are owning (`std::unique_ptr`) or non-owning (raw pointer with an ownership annotation in the doc comment).
 3. **Global or process-lifetime state?** Any member variable that lives beyond a single call stack frame -- a cache, a registry, a "computed once" value -- must pass the testability seam test:
-   - Does a test need to exercise an alternative value? → **Use `Singleton<T>`** from `Modules/NativeKernel/Include/NativeKernel/Utilities/Singleton.h`. Never introduce a file-static or function-local static for cached state; both are testability-hostile in exactly the same way.
-   - Is the value genuinely process-immutable (compile-time-derived, no test could need an alternative)? → A file-static is acceptable; document the suppression reason with a `// [TICKET-NNN]` reference and the anti-patterns.md justification.
-   - **Never** introduce a `#if ENABLE_UNIT_TESTS_WITH_FAKES` branch. That branch is evidence that the design is testability-hostile, not a solution to it. If you find yourself wanting one, redesign around `Singleton<T>` first.
+   - Does a test need to exercise an alternative value? → **Use the project's `Singleton<T>`** or equivalent CRTP singleton utility. Never introduce a file-static or function-local static for cached state; both are testability-hostile in exactly the same way.
+   - Is the value genuinely process-immutable (compile-time-derived, no test could need an alternative)? → A file-static is acceptable; document the suppression reason with a `// [TICKET-NNN]` reference and the cpp-anti-patterns.md justification.
+   - **Never** introduce a test-build conditional bypass branch. That branch is evidence that the design is testability-hostile, not a solution to it. If you find yourself wanting one, redesign around the project's singleton utility first.
 4. **Class member ordering:** public before private. Within each section: type aliases → static constants → constructors/destructor/assignment → methods (most important first) → private types → private methods → data members.
 
 ### Step 4 -- API declaration (before implementing any method)
@@ -108,11 +107,11 @@ Apply to every new or changed public declaration.
 
 **Contract attributes:**
 
-- Apply `[[nodiscard]]` per `idiom-checklist.md > [[nodiscard]] heuristics`. When in doubt: if discarding the return value is almost certainly a caller error, add it.
-- Apply `noexcept` per `idiom-checklist.md > noexcept heuristics`. Pure observers and default/move constructors are `noexcept` by default.
+- Apply `[[nodiscard]]` per `cpp-idioms.md > [[nodiscard]] heuristics`. When in doubt: if discarding the return value is almost certainly a caller error, add it.
+- Apply `noexcept` per `cpp-idioms.md > noexcept heuristics`. Pure observers and default/move constructors are `noexcept` by default.
 - Use `static_assert` to encode type contracts knowable at compile time (POD-ness, size, enum exhaustiveness).
 
-**API design smells to avoid at declaration time** (from `idiom-checklist.md > C++17-specific API design smells`):
+**API design smells to avoid at declaration time** (from `cpp-idioms.md > C++17-specific API design smells`):
 
 | Smell | Fix |
 |---|---|
@@ -132,28 +131,11 @@ Apply to every new or changed public declaration.
 
 **Project types first** (MUST on public API, SHOULD in implementation):
 
-Apply the project-specific overlay in `modernisation-playbook.md > Project-specific overlay`:
-
-| Avoid | Use instead |
-|---|---|
-| `std::string` (engine code) | `core::string` / `core::wstring` |
-| `std::string_view` parameter | `core::string_ref` by value (`&&` overload `= delete` if storing) |
-| `std::vector<T>` (engine code) | `core::vector<T, kMemLabel>` |
-| `std::unordered_map` / `std::unordered_set` | `core::hash_map` / `core::hash_set` |
-| `snprintf` + manual `core::string` build | `core::Format(...)` |
-| Hand-rolled string operations | `Word.h` helpers (`StrICmp`, `BeginsWith`, `EndsWith`, ...) |
-| Hand-rolled argv classification | `HasArgument` / `GetArgumentValue` (`Argv.cpp`) |
-
-**Memory:**
-
-- Long-lived engine heap objects: `UNITY_NEW(kMemLabel, T)(args)` / `UNITY_DELETE(ptr)`.
-- Short-lived RAII-scoped: `std::make_unique<T>` is acceptable.
-- Specify `kMem*` labels deliberately; using `kMemDefault` without a documented reason is a SHOULD finding.
-- **`core::vector<T>` element-type constraint:** `T` must be trivially relocatable -- no self-pointers, no intrusive-list nodes, no back-pointer members. Violating this causes silent corruption under reallocation that unit tests will not catch.
+If an org overlay is present (`../org/references/`), load it now. It defines the project-specific type table (which `std::*` types to replace with project equivalents) and any memory allocation conventions. Without an org overlay, use `std::*` types as specified in `cpp-modernisation.md > Tier tables`.
 
 **Idioms (write modern, not legacy):**
 
-Apply the tier tables in `modernisation-playbook.md`. Key items at MUST/SHOULD tier:
+Apply the tier tables in `cpp-modernisation.md`. Key items at MUST/SHOULD tier:
 
 - Range-for over index loops for container iteration.
 - Structured bindings for map iteration (`for (const auto& [key, val] : map)`) and multi-value returns.
@@ -162,7 +144,7 @@ Apply the tier tables in `modernisation-playbook.md`. Key items at MUST/SHOULD t
 - `using MyType = T;` over `typedef`.
 - Lambdas over `std::bind`.
 - `std::scoped_lock` over manual `lock()` / `unlock()`.
-- `std::unique_ptr` over raw `new` / `delete` (when not using `UNITY_NEW`).
+- `std::unique_ptr` over raw `new` / `delete` (or project equivalent when the project has a custom allocator macro).
 - `nullptr` over `0` or `NULL`.
 - `static_assert` over runtime `Assert` when the property is compile-time knowable.
 - `override` on every virtual override.
@@ -170,7 +152,7 @@ Apply the tier tables in `modernisation-playbook.md`. Key items at MUST/SHOULD t
 
 ### Step 6 -- Comments (write as you go, not as a post-pass)
 
-Apply `../cpp/references/commenting-hygiene.md` throughout authoring.
+Apply `../cpp/references/cpp-commenting.md` throughout authoring.
 
 **Write doc comments at declaration time:**
 
@@ -209,9 +191,9 @@ After the self-review: fix all MUST items before reporting done. Defer SHOULD it
 
 Task: "Add a helper that checks whether a string consists entirely of ASCII digits."
 
-Step 1 reinvention check: grep `idiom-checklist.md > Reinvention catalogue` for "numeric", "digit", "integer". Find `IsStringInteger` and `IsStringNumber` in `NativeKernel/Utilities/Word.h`. Verify the signature covers the need.
+Step 1 reinvention check: grep `cpp-idioms.md > Reinvention catalogue` for "numeric", "digit", "integer". Find an existing `IsStringInteger` / `IsStringNumber` style utility in the project's utility layer. Verify the signature covers the need.
 
-**Decision:** Do not write a new helper. Use `IsStringInteger(s)` or `IsStringNumber(s)`. If neither covers the edge case exactly, extend `Word.h` rather than adding a local copy -- extending the canonical utility means every consumer benefits.
+**Decision:** Do not write a new helper. Use the existing utility. If neither covers the edge case exactly, extend the canonical utility rather than adding a local copy -- extending the canonical utility means every consumer benefits.
 
 ---
 
@@ -236,8 +218,8 @@ private:
     ApplicationMode   m_Mode{};
 };
 
-// ApplicationModeProvider.cpp
-DEFINE_SINGLETON_INSTANCE(ApplicationModeProvider);
+// ApplicationModeProvider.cpp (define static storage for CRTP singleton)
+template<> ApplicationModeProvider* Singleton<ApplicationModeProvider>::s_Instance = nullptr;
 
 [[nodiscard]] ApplicationMode GetApplicationMode() noexcept
 {
@@ -248,7 +230,7 @@ DEFINE_SINGLETON_INSTANCE(ApplicationModeProvider);
 **What NOT to write:**
 
 ```cpp
-// Do not write this -- requires a #if ENABLE_UNIT_TESTS_WITH_FAKES bypass
+// Do not write this -- requires a #if TEST_BUILD bypass
 // the moment the first test needs an alternative value.
 static ApplicationMode s_Mode;
 static std::once_flag  s_Flag;
@@ -267,20 +249,20 @@ The file-static form is testability-hostile by construction. The `Singleton<T>` 
 
 Task: "Add a function that processes an input token with an optional fast path."
 
-Step 4 API smell check: draft `void ProcessToken(core::string_ref token, bool fast)` triggers the boolean behaviour selector smell -- `true` and `false` paths do fundamentally different things; callers invert silently.
+Step 4 API smell check: draft `void ProcessToken(std::string_view token, bool fast)` triggers the boolean behaviour selector smell -- `true` and `false` paths do fundamentally different things; callers invert silently.
 
 **Corrected declaration:**
 
 ```cpp
-[[nodiscard]] Result ProcessToken(core::string_ref token) noexcept;
-[[nodiscard]] Result ProcessTokenFast(core::string_ref token) noexcept;
+[[nodiscard]] Result ProcessToken(std::string_view token) noexcept;
+[[nodiscard]] Result ProcessTokenFast(std::string_view token) noexcept;
 ```
 
 or, if the two paths share most logic:
 
 ```cpp
 enum class ProcessingSpeed { Normal, Fast };
-[[nodiscard]] Result ProcessToken(core::string_ref token, ProcessingSpeed speed) noexcept;
+[[nodiscard]] Result ProcessToken(std::string_view token, ProcessingSpeed speed) noexcept;
 ```
 
 Either form makes the call site self-documenting and catches wrong-argument bugs at compile time.

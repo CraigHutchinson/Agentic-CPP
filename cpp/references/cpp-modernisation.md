@@ -1,15 +1,15 @@
 # Modernisation Playbook
 
-Companion to `anti-patterns.md`. Where the anti-pattern guard tells the reviewer **what NOT to raise**, this playbook tells the reviewer **what TO raise**: legacy idioms that should be modernised when seen in new or touched code.
+Companion to `cpp-anti-patterns.md`. Where the anti-pattern guard tells the reviewer **what NOT to raise**, this playbook tells the reviewer **what TO raise**: legacy idioms that should be modernised when seen in new or touched code.
 
-Shared C++ reference. Loaded by `cpp-write` (step 5, implementation idioms), `cpp-review` (step 9, modernisation check), and `cpp-simplify` (step 1, reference load). Apply **after** the reinvention check (`idiom-checklist.md > Reinvention catalogue`) so project-specific utilities (`core::*`, `Word.h`, `Argv.cpp`) take precedence over generic standard-library modernisation.
+Shared C++ reference. Loaded by `cpp-write` (step 5, implementation idioms), `cpp-review` (step 9, modernisation check), and `cpp-simplify` (step 1, reference load). Apply **after** the reinvention check (`cpp-idioms.md > Reinvention catalogue`) so project-specific utilities take precedence over generic standard-library modernisation.
 
 The structure mirrors the `clang-tidy modernize-*` check family, which is the industry-canonical enumeration of legacy idioms with known remediations. If the team ever wires those checks into CI, findings here map 1:1 to a check name.
 
 ## Authority and prior art
 
 - **C++ Core Guidelines** (Stroustrup, Sutter) -- normative source for the resource-management (R.*), interface (I.*), expression (ES.*), and type (Type.*) rules cited inline below.
-- **LLVM Coding Standards** -- the closest analogue to this codebase's convention: "When both C++ standard library and LLVM support libraries provide similar functionality, it is generally preferable to use the LLVM library if there isn't a specific reason to favor the C++ implementation." This codebase follows the same pattern with `core::*` types over `std::*`.
+- **LLVM Coding Standards** -- the closest analogue to this codebase's convention: "When both C++ standard library and LLVM support libraries provide similar functionality, it is generally preferable to use the LLVM library if there isn't a specific reason to favor the C++ implementation." Projects with in-house container libraries follow the same pattern: prefer the project's own types over their `std::*` equivalents.
 - **Chromium Modern C++ feature list** -- useful negative space: even modern codebases ban `std::bind`, discourage `std::shared_ptr` for owned-by-default, and avoid `std::regex` / `std::random` engines for size and performance reasons. Aligns with this playbook's preference for project utilities and lambdas over `bind`.
 - **`clang-tidy modernize-*` checks** -- canonical enumeration of legacy idioms with known automated remediations. Entries below cite the corresponding check name in parentheses.
 
@@ -19,27 +19,11 @@ The structure mirrors the `clang-tidy modernize-*` check family, which is the in
 - **SHOULD** -- the modern form removes a footgun, encodes an invariant in the type system, or replaces a hand-rolled pattern with a project utility.
 - **NICE** -- modernisation that is purely a clarity / consistency win.
 
-The "Migration cost is not a suppression reason" rule from `anti-patterns.md > Overriding principle` applies. Cost informs the tier, not the decision to flag.
+The "Migration cost is not a suppression reason" rule from `cpp-anti-patterns.md > Overriding principle` applies. Cost informs the tier, not the decision to flag.
 
-## Project-specific overlay (read first)
+## Project-specific overlay
 
-For this codebase, these in-house types are preferred over their `std::` equivalents in engine code. Findings against `std::*` use in engine code are MUST on public API surfaces and SHOULD in implementation files:
-
-| In-house | Replaces | Notes |
-| --- | --- | --- |
-| `core::string` / `core::wstring` | `std::string` / `std::wstring` | Memory label, embedded buffer for small strings |
-| `core::string_ref` | `std::string_view` (when interfacing with engine) | Lifetime safety pattern: declare `&&` overload `= delete` if storing |
-| `core::vector<T, kMemLabel>` | `std::vector<T>` | Allocator-aware; label is meaningful |
-| `core::hash_map` / `core::hash_set` | `std::unordered_map` / `std::unordered_set` | |
-| `core::flat_set` / `core::flat_map` | `std::set` / `std::map` for small / cache-friendly cases | |
-| `core::array_ref<T>` | hand-rolled `data + size` view; iterator-pair parameter | The canonical span-like read-only view |
-| `core::fixed_array<T, N>` | stack-allocated arrays | |
-| `core::block_vector<T>` | long arrays where stable pointers matter | |
-| `core::Format(...)` | `snprintf` + manual `core::string` build | Carries memory label |
-| `StrICmp` / `BeginsWith` / `EndsWith` (`Word.h`) | hand-rolled string compares | |
-| `HasArgument` / `GetArgumentValue` (`Argv.cpp`) | hand-rolled argv classification | |
-
-Reference: `Documentation/InternalDocs/docs/Runtime/Core/containers/`.
+If an org overlay is present (`../org/references/`), load it before applying the tier tables below. The overlay defines which project types are preferred over their `std::*` equivalents and which standard-library types are approved for the project. Without an org overlay, prefer `std::*` types as written in the tier tables.
 
 ## Memory and lifetime
 
@@ -49,7 +33,7 @@ Reference: `Documentation/InternalDocs/docs/Runtime/Core/containers/`.
 | `T*` parameter that is conceptually owning (`modernize-pass-by-value` for sinks) | `std::unique_ptr<T>` parameter (sink) or `T&` (non-owning, non-null) | MUST | Core Guidelines I.11 |
 | Manual `try { ... } catch { delete; throw; }` cleanup | RAII wrapper / `std::unique_ptr` / scope guard | MUST | Core Guidelines E.6 |
 | `0` or `NULL` for pointer values (`modernize-use-nullptr`) | `nullptr` | SHOULD | Type-safe; participates correctly in overload resolution |
-| Pointer arithmetic over an array | range-for / `core::array_ref<T>` | SHOULD | Eliminates off-by-one and bounds bugs |
+| Pointer arithmetic over an array | range-for / project span type (e.g., `std::span<T>` in C++20) | SHOULD | Eliminates off-by-one and bounds bugs |
 | `std::auto_ptr` (`modernize-replace-auto-ptr`) | `std::unique_ptr` | MUST | `auto_ptr` is removed from the standard |
 | Raw-pointer member with an unclear ownership story | `std::unique_ptr` (owning) or non-owning observer comment + `[[nodiscard]]` factory | SHOULD | Caller intent should be type-checked |
 
@@ -57,12 +41,12 @@ Reference: `Documentation/InternalDocs/docs/Runtime/Core/containers/`.
 
 | Legacy idiom | Modern form | Tier |
 | --- | --- | --- |
-| Hand-rolled `struct { T* data; size_t size; }` "view" | `core::array_ref<T>` | MUST -- this is reinvention of a documented project utility and forces every consumer into index loops |
-| `const char*` + separate `size_t length` parameter | `core::string_ref` parameter by value (consider `&&` overload `= delete` if storing) | SHOULD |
-| Iterator-pair function parameter (`begin, end`) for project containers | `core::array_ref<T>` / range parameter | SHOULD |
+| Hand-rolled `struct { T* data; size_t size; }` "view" | project span type (e.g., `std::span<T>` in C++20, or `gsl::span<T>`) | MUST when a documented project utility exists; SHOULD otherwise -- forces every consumer into index loops |
+| `const char*` + separate `size_t length` parameter | `std::string_view` parameter by value (consider `&&` overload `= delete` if storing) | SHOULD |
+| Iterator-pair function parameter (`begin, end`) for project containers | project span type / range parameter | SHOULD |
 | Out-parameter `bool f(Result& out)` for "may fail" | `std::optional<Result> f()` or `[[nodiscard]]` enum disposition | SHOULD -- caller can't forget to check the disposition |
 | Multiple out-parameters (`modernize-use-nodiscard`-adjacent) | Return a struct + structured bindings | SHOULD |
-| C-style array as parameter (`modernize-avoid-c-arrays`) | `std::array<T, N>` (fixed) or `core::array_ref<T>` (variable) | SHOULD |
+| C-style array as parameter (`modernize-avoid-c-arrays`) | `std::array<T, N>` (fixed) or project span type (variable) | SHOULD |
 | `container.push_back(T(args...))` (`modernize-use-emplace`) | `container.emplace_back(args...)` | NICE -- raise as SHOULD when the temporary holds a non-trivial resource |
 | `s.length() == 0` | `s.empty()` | NICE |
 
@@ -72,7 +56,7 @@ Reference: `Documentation/InternalDocs/docs/Runtime/Core/containers/`.
 | --- | --- | --- |
 | `for (size_t i = 0; i < v.size(); ++i)` over a container (`modernize-loop-convert`) | range-for `for (const auto& x : v)` | SHOULD |
 | `for (Iter it = v.begin(); it != v.end(); ++it)` (`modernize-loop-convert`) | range-for | SHOULD |
-| Index loop where the index is unused | range-for | MUST when the index loop is the only reason a hand-rolled `data + size` view exists -- both findings collapse into the `core::array_ref` migration |
+| Index loop where the index is unused | range-for | MUST when the index loop is the only reason a hand-rolled `data + size` view exists -- both findings collapse into the project span migration |
 | Manual `find` / `count` loops | `std::find_if` / `std::count_if` / `std::any_of` / `std::all_of` | NICE; SHOULD when the manual loop hides the predicate intent |
 | Map iteration via `it->first` / `it->second` | Structured bindings: `for (const auto& [key, val] : map)` | SHOULD -- eliminates `first`/`second` ambiguity and documents intent at the declaration site. Already in use in the codebase (GfxBuffer, SchemaGenerator, ManagedAttributeManager). |
 | `std::tie(a, b) = f()` for multi-value return unpacking | Structured bindings: `auto [a, b] = f()` | NICE |
@@ -120,7 +104,7 @@ Reference: `Documentation/InternalDocs/docs/Runtime/Core/containers/`.
 
 | Legacy idiom | Modern form | Tier |
 | --- | --- | --- |
-| Runtime `Assert` for property knowable at compile time | `static_assert(...)` | SHOULD |
+| Runtime `assert()` or project assertion macro for property knowable at compile time | `static_assert(...)` | SHOULD |
 | `static_assert(cond, "")` with empty message (`modernize-unary-static-assert`) | `static_assert(cond);` | NICE |
 | `#define` constants (`modernize-macro-to-enum` for closed sets) | `constexpr` variable / `inline constexpr` / `enum class` | SHOULD |
 | Macro-based conditional compilation that could be `if constexpr` | `if constexpr` | SHOULD |
@@ -130,7 +114,7 @@ Reference: `Documentation/InternalDocs/docs/Runtime/Core/containers/`.
 
 | Legacy idiom | Modern form | Tier |
 | --- | --- | --- |
-| Function whose result must be checked but isn't `[[nodiscard]]` (`modernize-use-nodiscard`) | Add `[[nodiscard]]` | SHOULD -- see `idiom-checklist.md > [[nodiscard]] heuristics` for when |
+| Function whose result must be checked but isn't `[[nodiscard]]` (`modernize-use-nodiscard`) | Add `[[nodiscard]]` | SHOULD -- see `cpp-idioms.md > [[nodiscard]] heuristics` for when |
 | Function that conceptually never throws but isn't `noexcept` | Add `noexcept` | SHOULD -- enables move-semantics optimisations and signals intent. Document the "terminate-on-failure" contract for any wrapped non-`noexcept` callee. |
 | Returning by `const T&` to a local | Return by value + rely on RVO / NRVO / move | MUST -- dangling reference is UB |
 | `return Foo(args)` from a function returning `Foo` (`modernize-return-braced-init-list`) | `return {args};` when readability improves | NICE |
@@ -140,17 +124,17 @@ Reference: `Documentation/InternalDocs/docs/Runtime/Core/containers/`.
 Process-wide mutable state -- file-static caches, namespace-scope flags, ad-hoc DCL singletons, "first call wins" Meyer's singletons that latch a value -- creates an order-dependence between tests that the test harness cannot undo. Symptoms in review:
 
 - Helpful comments such as "populated once at first call -- usually long before any test fixture installs its fakes".
-- A `#if ENABLE_UNIT_TESTS_WITH_FAKES` (or equivalent) branch that bypasses the cache *only in test builds* to recover testability. The bypass is the admission that the design is testability-hostile.
+- A `#if TEST_BUILD` (or equivalent) branch that bypasses the cache *only in test builds* to recover testability. The bypass is the admission that the design is testability-hostile.
 - A free-function accessor (`GetThing()`) backed by `s_Thing` / `g_Thing` file-statics that hold both the value and its initialised flag.
 - Tests that pass individually but fail when run together, or whose pass/fail depends on the order specified by the test runner.
 
 | Legacy idiom | Modern form | Tier |
 | --- | --- | --- |
-| File-static cache + `std::once_flag` / atomic flag accessed only via a free function | Derive from the project's `Singleton<T>` template (CRTP, with `ScopedOverride` for tests); cache lives as instance state; tests bind a fresh instance via `Singleton<T>::ScopedOverride` | MUST when the file-static cache forces a `#if TEST_BUILD` bypass elsewhere; SHOULD when tests work today but could not exercise alternative configurations without binary divergence |
+| File-static cache + `std::once_flag` / atomic flag accessed only via a free function | Derive from the project's `Singleton<T>` template (CRTP, with `BindInstance` for production wiring); cache lives as instance state. Tests use the dual-form predicate pattern below -- not a binding override -- so the singleton itself does not need a scoped-override mechanism. | MUST when the file-static cache forces a `#if TEST_BUILD` bypass elsewhere; SHOULD when tests work today but could not exercise alternative configurations without binary divergence |
 | Function-local `static` of a non-trivial type owning cached state (`static Cache c;` inside a free-function accessor) | Same as file-static: extract the cache into an instance owned by a `Singleton<T>`-derived class | MUST -- function-local statics are testability-hostile in the same way as file-statics: latched once per process, no reset hook, scoped-override impossible. The narrower scope is purely lexical and does not improve test isolation. (Narrow exceptions: write-only diagnostic counters that nothing depends on for behaviour, and Meyer's-singleton holders for genuinely immutable values that have no plausible test alternative.) |
 | Namespace-scope mutable variables that any TU can read after init | Instance state on a `Singleton<T>`-derived class; reads go through `T::GetInstance()` | SHOULD |
 | Hand-rolled DCL with `std::atomic<bool>` + `std::mutex` at namespace scope | Same caching logic as instance members of a class that inherits the project's `Singleton<T>`; the singleton template handles instance lookup | SHOULD -- the caching pattern stays; what changes is *who owns the state* (an instantiable class, not the TU) |
-| `static T* g_Active = nullptr;` set by a `SetThing(T*)` function with no scope discipline | `Singleton<T>::ScopedOverride` RAII handle: ctor reseats the active pointer, dtor restores the previous, copy/move deleted, asserts on out-of-LIFO teardown | MUST -- the bare setter has no "restore previous on test teardown" guarantee, leading to cross-test pollution |
+| `static T* g_Active = nullptr;` set by a `SetThing(T*)` function with no scope discipline | Move ownership to `Singleton<T>::BindInstance(...)` at the production wiring site (asserts not-already-bound, asserts non-null); for tests, prefer the dual-form predicate pattern (a `(const T&)` overload that takes the instance explicitly, plus a no-arg overload that defers to `T::GetInstance()`) so tests construct concrete instances on the stack and never need to swap the active singleton | MUST -- the bare setter has no init-once guarantee and no defined teardown; tests cannot exercise alternative configurations without cross-test pollution |
 | New project introducing the pattern from scratch | Reuse the existing `Singleton<T>` template at the project's canonical utility location; do **not** introduce a parallel `Provider` template alongside it | MUST -- introducing a parallel template is reinvention; if `Singleton<T>` lacks a needed feature, extend it additively |
 
 **Why the class-based form wins for tests:**
@@ -162,12 +146,11 @@ Process-wide mutable state -- file-static caches, namespace-scope flags, ad-hoc 
 
 **Recommended pattern: extend the project's existing `Singleton<T>` template.**
 
-This codebase already ships a CRTP `Singleton<T>` at `Modules/NativeKernel/Include/NativeKernel/Utilities/Singleton.h` that:
+Where the project ships a CRTP `Singleton<T>` utility, it typically:
 
 - Does **not** auto-register the constructed object as the active instance -- tests are free to instantiate as many objects on the stack as they need without disturbing the production singleton.
-- Exposes `Create(memLabel)` / `Destroy()` / `SetInstance(...)` for production lifecycle.
-- Provides a `Singleton<T>::ScopedOverride` RAII handle (LIFO-nested, copy/move deleted, asserts on out-of-order teardown) for installing a test alternative for the duration of a fixture.
-- Uses a `DEFINE_SINGLETON_INSTANCE(MyType)` macro at .cpp scope to define the static storage.
+- Exposes `Create(memLabel)` / `Destroy()` for production lifecycle, plus `BindInstance(Concrete*, MemLabelRef)` for cases where the producer chooses the concrete type at runtime (abstract base + multiple subclasses).
+- Defines the static storage at .cpp scope via explicit template specialization (e.g., `template<> MyType* Singleton<MyType>::s_Instance = nullptr;`) or project equivalent.
 
 **Production declaration:**
 
@@ -175,32 +158,38 @@ This codebase already ships a CRTP `Singleton<T>` at `Modules/NativeKernel/Inclu
 class Provider : public Singleton<Provider>
 {
 public:
-    [[nodiscard]] Context Get() noexcept;     // cached on first call (per instance)
-
-private:
-    std::atomic<bool> m_Cached{false};
-    std::mutex        m_Mutex;
-    Context           m_Cache{};
+    [[nodiscard]] Context Get() const noexcept;
+    [[nodiscard]] bool    IsReady() const noexcept;
 };
 
-// In Provider.cpp:
-DEFINE_SINGLETON_INSTANCE(Provider);
-
-// Free-function accessor preserves the call-site contract.
-[[nodiscard]] Context GetContext() noexcept { return Provider::GetInstance().Get(); }
+// In Provider.cpp (define the static storage for the CRTP singleton):
+template<> Provider* Singleton<Provider>::s_Instance = nullptr;
 ```
+
+**Dual-form predicate (preferred testability pattern):**
+
+For each predicate or accessor that callers want both the singleton-deferring form *and* the explicit-instance form of, expose two overloads -- the `(const T&)` one is a pure function on an instance, the no-arg one defers to the singleton:
+
+```cpp
+// Header
+[[nodiscard]] inline bool IsProviderReady(const Provider& p) noexcept { return p.IsReady(); }
+[[nodiscard]] inline bool IsProviderReady() noexcept { return IsProviderReady(Provider::GetInstance()); }
+```
+
+Production code calls `IsProviderReady()`. Tests call `IsProviderReady(testInstance)` directly with a stack-constructed `Provider` and never have to swap the active singleton. The production and test code paths share the same predicate body; only the instance source differs.
 
 **Test usage:**
 
 ```cpp
-TEST(F, ContextHonoursLegacyFakeAtFixtureSetup)
+TEST(F, ProviderReadyAfterInit)
 {
-    Provider testInstance;                              // fresh; no inherited cache
-    Singleton<Provider>::ScopedOverride bind(&testInstance);
-    InstallLegacyFake(...);                             // observed because cache is empty
-    CHECK_EQUAL(expected, GetContext());                // reads through GetInstance() -> testInstance
+    Provider testInstance;                       // fresh; the singleton stays unmodified
+    testInstance.InitFromFakeArgv("...");
+    CHECK(IsProviderReady(testInstance));        // direct call; no rebind, no override, no teardown
 }
 ```
+
+For tests that need to observe behaviour through a free function or lower layer that *does* call `Provider::GetInstance()`, do not invent a binding override -- either expose a `(const Provider&)` overload of that helper (preferred), or use a higher-level integration test that owns the production lifecycle (`Create()` in setup, `Destroy()` in teardown).
 
 If `Singleton<T>` is missing a feature your test pattern needs, **extend it additively**; do not introduce a parallel template. Parallel-template reinvention is itself a MUST finding under the reinvention check.
 
@@ -216,7 +205,7 @@ When existing code needs to become testable, three paths exist. Choose the earli
 
 **3. Signature change on an existing method** -- only when no additive or structural path exists, and only after user discussion with clear written justification. Changing an existing API solely for testability breaks caller assumptions that cannot be recovered from the diff alone.
 
-**What is not a valid path:** weakening the semantic contract of an existing type to accommodate tests (see `anti-patterns.md > Semantic contract weakening for testability`). `Singleton<T>` has an implicit "exactly one instance" contract; adding `ScopedOverride` changes that contract without changing the name. This is semantic drift and must be surfaced for user discussion before landing, regardless of whether existing call sites still compile.
+**What is not a valid path:** weakening the semantic contract of an existing type to accommodate tests (see `cpp-anti-patterns.md > Semantic contract weakening for testability`). `Singleton<T>` has an implicit "exactly one instance" contract; adding a stack-swap mechanism (`ScopedOverride`-style RAII handle, `SetInstance(T*)` setter, etc.) changes that contract from "exactly one instance" to "one *active* at a time" without changing the name. This is semantic drift and must be surfaced for user discussion before landing, regardless of whether existing call sites still compile. The dual-form predicate pattern above is the sanctioned alternative -- it leaves the singleton's contract intact and gives tests a way in without rebinding.
 
 ### Retroactively adding test coverage
 
@@ -224,8 +213,8 @@ Adding tests for existing APIs that have no direct coverage is always valid and 
 
 Test files may freely:
 
-- Construct derived instances on the stack (`Singleton<T>` does not auto-register on construction).
-- Use `Singleton<T>::ScopedOverride` to bind and unbind within each fixture.
+- Construct derived instances on the stack (`Singleton<T>` does not auto-register on construction) and call the `(const T&)` overload of any dual-form predicate / accessor directly.
+- For integration tests that need the production singleton wired up, drive the lifecycle explicitly (`Create()` / `BindInstance()` in setup, `Destroy()` in teardown) so the test owns the start and end of the active instance.
 - Hard-reset static state in fixture setup/teardown via `Destroy()` to prevent cross-test leakage.
 - Introduce a local test type (`TestSingletonHolder`) to avoid colliding with production static storage.
 
@@ -233,7 +222,7 @@ If a test cannot be written cleanly without a structural change that would be ot
 
 ## Worked examples
 
-### Example A -- hand-rolled view -> `core::array_ref`
+### Example A -- hand-rolled view -> project span type
 
 ```cpp
 struct StringListView
@@ -249,13 +238,14 @@ for (size_t i = 0; i < view.size; ++i)
 becomes
 
 ```cpp
-using StringListView = core::array_ref<const char*>;
+// using project span type (e.g., std::span<const char*> in C++20, or project equivalent)
+using StringListView = std::span<const char*>;
 
 for (const char* token : view)
     use(token);
 ```
 
-Wins: range-for, no off-by-one, `begin()`/`end()` for std-algorithm interop, project utility instead of reinvention. Tier: **MUST** because the reinvention check is the dominant rule.
+Wins: range-for, no off-by-one, `begin()`/`end()` for std-algorithm interop, project utility instead of reinvention. Tier: **MUST** when the project has a documented span utility; **SHOULD** otherwise.
 
 ### Example B -- manual lock/unlock -> `std::scoped_lock`
 
@@ -325,7 +315,7 @@ Wins: leak-free under exceptions, ownership visible at the type level, no manual
 ```cpp
 namespace
 {
-#if !ENABLE_UNIT_TESTS_WITH_FAKES
+#if !TEST_BUILD
     std::atomic<bool>      s_Cached{false};
     std::mutex             s_Mutex;
     Context                s_Cache{};
@@ -334,7 +324,7 @@ namespace
 
 Context GetContext() noexcept
 {
-#if ENABLE_UNIT_TESTS_WITH_FAKES
+#if TEST_BUILD
     // Tests fake the inputs per-fixture; the production cache (set on
     // first call, usually before fixture setup) would mask the fake.
     return Compute();
@@ -349,7 +339,7 @@ Context GetContext() noexcept
 }
 ```
 
-becomes (using the project's existing `Singleton<T>` template at `Modules/NativeKernel/Include/NativeKernel/Utilities/Singleton.h`)
+becomes (using the project's existing `Singleton<T>` template or equivalent singleton utility)
 
 ```cpp
 // In ContextProvider.h:
@@ -372,14 +362,14 @@ private:
     Context           m_Cache{};
 };
 
-// In ContextProvider.cpp:
-DEFINE_SINGLETON_INSTANCE(ContextProvider);
+// In ContextProvider.cpp (define the static storage for the CRTP singleton):
+template<> ContextProvider* Singleton<ContextProvider>::s_Instance = nullptr;
 
 Context GetContext() noexcept { return ContextProvider::GetInstance().Get(); }
 ```
 
-Wins: identical production code path and test code path; no `#if TEST_BUILD` bypass; each test instantiates a fresh `ContextProvider` and binds it via `Singleton<ContextProvider>::ScopedOverride` for its scope; deterministic teardown; multiple alternative configurations can coexist in the same binary; reuses the project's canonical CRTP singleton (no parallel template). Tier: **MUST** when the original carries the `#if TEST_BUILD` bypass (the bypass *is* the evidence of a testability defect); **SHOULD** when no bypass exists today but the file-static would force one to be added the moment a test wants alternative inputs.
+Wins: identical production code path and test code path; no `#if TEST_BUILD` bypass; each test instantiates a fresh `ContextProvider` on the stack and exercises it via dual-form predicates / accessors that take `(const ContextProvider&)` directly -- no rebinding of the active singleton needed; deterministic teardown (the stack frame); multiple alternative configurations coexist in the same binary; reuses the project's canonical CRTP singleton (no parallel template, no contract weakening). Tier: **MUST** when the original carries the `#if TEST_BUILD` bypass (the bypass *is* the evidence of a testability defect); **SHOULD** when no bypass exists today but the file-static would force one to be added the moment a test wants alternative inputs.
 
 ---
 
-*Add new patterns below as the team encounters consistent modernisation opportunities. The playbook is paired with `anti-patterns.md`: this file enumerates the WIN cases, that one enumerates the SUPPRESS cases. The overriding principle (safety-improving modernisation is never cosmetic) lives in `anti-patterns.md`. After extending this file, commit and push -- see [Contributing](../../README.md#contributing).*
+*Add new patterns below as the team encounters consistent modernisation opportunities. The playbook is paired with `cpp-anti-patterns.md`: this file enumerates the WIN cases, that one enumerates the SUPPRESS cases. The overriding principle (safety-improving modernisation is never cosmetic) lives in `cpp-anti-patterns.md`. After extending this file, commit and push -- see [Contributing](../../README.md#contributing).*

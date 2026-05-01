@@ -19,10 +19,10 @@ Shared reference material in `cpp/references/` is loaded by all four skills:
 
 | File | Purpose |
 |---|---|
-| `idiom-checklist.md` | Reinvention catalogue, API design smells, file organisation rules |
-| `modernisation-playbook.md` | C++17 idiom tiers, project-specific type overlay, globals/testability seam pattern |
-| `commenting-hygiene.md` | Doc comment MUST/SHOULD table, doc templates, ownership annotation conventions |
-| `anti-patterns.md` | Finding categories learned not to raise; overriding principle |
+| `cpp-idioms.md` | Reinvention catalogue, API design smells, file organisation rules |
+| `cpp-modernisation.md` | C++17 idiom tiers, project-specific type overlay, globals/testability seam pattern |
+| `cpp-commenting.md` | Doc comment MUST/SHOULD table, doc templates, ownership annotation conventions |
+| `cpp-anti-patterns.md` | Finding categories learned not to raise; overriding principle |
 
 ---
 
@@ -148,10 +148,10 @@ The `cpp/references/` files are the shared knowledge base. Improvements to any o
 
 | File | Trigger |
 |---|---|
-| `anti-patterns.md` | A finding type is rejected with the same reason on two or more PRs |
-| `modernisation-playbook.md` | A new safe-modernisation pattern is validated and proven consistent |
-| `idiom-checklist.md` | A new project utility enters the reinvention catalogue, or an API design smell is confirmed |
-| `commenting-hygiene.md` | A recurring comment anti-pattern or suppression is identified |
+| `cpp-anti-patterns.md` | A finding type is rejected with the same reason on two or more PRs |
+| `cpp-modernisation.md` | A new safe-modernisation pattern is validated and proven consistent |
+| `cpp-idioms.md` | A new project utility enters the reinvention catalogue, or an API design smell is confirmed |
+| `cpp-commenting.md` | A recurring comment anti-pattern or suppression is identified |
 
 ### Commit workflow
 
