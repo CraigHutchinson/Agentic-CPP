@@ -116,7 +116,7 @@ Full C++ reference material (reinvention catalogue, modernisation playbook, idio
 
 ## Per-project setup
 
-Run `cpp-project-init` in any new C++ project to stamp the project-level Cursor rule and AGENTS.md section automatically. The skill auto-detects Unity engine projects and selects the appropriate constraint block (Unity-specific `core::*` types, `UNITY_NEW`, `Singleton<T>` vs. generic C++ conventions).
+Run `cpp-project-init` in any new C++ project to stamp the project-level Cursor rule and AGENTS.md section automatically. If an org overlay is present (`~/.cursor/skills/org/references/`), the skill loads it and appends project-specific constraint blocks (custom allocators, type preferences, build macros) on top of the generic C++ conventions.
 
 ---
 
