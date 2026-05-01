@@ -2,6 +2,9 @@
 prism/
 update-project-schedule/
 
+# Org overlay -- standalone in-folder clone (unity GHE), not tracked here
+org/
+
 # OS
 .DS_Store
 Thumbs.db
