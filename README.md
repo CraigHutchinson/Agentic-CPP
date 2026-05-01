@@ -26,6 +26,29 @@ Shared reference material in `cpp/references/` is loaded by all four skills:
 
 ---
 
+## Rules at a glance
+
+The reference material encodes these themes across all four skills:
+
+| Rule | One-liner |
+|---|---|
+| **Reinvention** | Don't recreate a utility that already exists -- grep before you write |
+| **File location** | Code lives where a teammate would search for it six months from now |
+| **API naming** | Names encode the question the call site is actually asking |
+| **Type-system contracts** | Encode invariants in types, not prose -- `[[nodiscard]]`, `noexcept`, `static_assert` |
+| **Comment hygiene** | WHY not WHAT; no phase/roadmap labels; public surfaces need doc comments |
+| **Modernisation** | Prefer C++17 idioms and project-specific types (`core::*`) over raw-standard equivalents |
+| **Globals and testability** | File-statics and latched singletons create cross-test order-dependence |
+| **Testability paths** | Additive API first, then structural refactor, then (last resort) signature change |
+| **Semantic contract drift** | New API that weakens an existing type's implicit guarantee requires user discussion |
+| **Retroactive coverage** | Adding tests to uncovered APIs is always valid -- flag the missing seam, not the test |
+| **L0--L3 hierarchy** | Review descends Intent → Structural → API → Implementation; MUST at any layer stops the rest |
+| **Plan first** | Run plan-review mode before writing code -- L0/L1 fixes cost nothing at the design stage |
+| **Gaps and assumptions** | Ask rather than assume when no directive covers a design choice |
+| **Iterative review** | Loop until clean; retrospective captures decisions-without-directive for encoding |
+
+---
+
 ## Installation
 
 ### Option A -- live location (recommended: edit once, use everywhere)
