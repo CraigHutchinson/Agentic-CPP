@@ -13,6 +13,80 @@ The guiding principle is **WHY over WHAT**: comments document intent, contracts,
 
 ---
 
+## Header is the public interface — document it
+
+The header file is the contract a caller sees. The `.cpp` is implementation
+detail the caller does not read. The split has direct consequences for
+commenting policy:
+
+- **Every public declaration in a header carries a docblock.** Class, struct,
+  free function, public method, enum, public typedef, public constant. The
+  brief says what role the declaration plays; the longer prose, when needed,
+  states the contract a caller cannot infer from name + type alone (lifetime,
+  ordering, ownership, thread-safety, error mode). This applies even when the
+  declaration "looks obvious" — the next maintainer is not the author and will
+  not be reading the implementation.
+- **Implementation comments live in the `.cpp`.** Notes about *how* something
+  works, why a particular algorithm was chosen, the gotcha that motivated a
+  branch, references to specific bug repros — these go next to the code that
+  embodies them. Putting implementation notes in the header leaks coupling: a
+  reader of the header now has to mentally distinguish "contract" from
+  "current implementation choice", and the comment ages with whichever side
+  changes first.
+- **A `.cpp`-only function (anonymous namespace, file-static) is exempt from
+  the header rule** — it has no public surface — but still benefits from a
+  docblock explaining intent when the body is non-trivial.
+
+The narrow suppressions in [What NOT to comment](#what-not-to-comment--suppress-list)
+still apply (trivially obvious getters / setters with unambiguous names,
+self-evident one-liners). The "every public declaration in a header carries a
+docblock" rule does **not** force a docblock on `[[nodiscard]] Mode mode() const noexcept { return m_Mode; }`
+when `Mode` itself is documented and the getter is trivially named — the
+suppress list governs that case. The rule **does** apply to anything whose
+contract has lifetime, ordering, mutation, error, or thread-safety semantics
+the name does not carry.
+
+### Section-divider banner comments are a smell
+
+Comments shaped like
+
+```cpp
+// ---- Concrete subclasses -- facet enums scoped to their own type ----
+// ---- Named predicates ----
+// ---- Runtime-safe mode helpers (definitions in ProcessContext.cpp) ----
+// =================== PUBLIC API ===================
+// ////////////// Internal helpers //////////////////
+```
+
+are a substitute for structure that the language already provides. They mark
+"regions of the file" in prose because the file has grown to hold multiple
+distinct responsibilities. The banner is the symptom; the design issue is one
+of:
+
+1. **The file should be split.** Two banners separating two responsibilities is
+   the file telling you it wants to be two files. Split into
+   `Foo.h` + `FooHelpers.h` (or `Foo.h` + `FooFwd.h`, or `Foo.h` + a separate
+   public detail header) and let the include relationship carry the meaning.
+2. **The grouping should be a type.** Free functions banner-grouped under
+   `// ---- predicates ----` are usually candidates for a class with member
+   predicates, or a namespace with a clear name (`namespace foo::predicates { … }`).
+   The namespace name carries the meaning the banner was trying to convey.
+3. **The "definitions live elsewhere" annotation is noise.** A trailing
+   `(definitions in Foo.cpp)` on a banner restates what the header / source
+   split already implies. If the reader needs that hint, the declaration
+   itself is in the wrong file or the file is doing too much.
+
+Raise as **SHOULD**: propose either a split or a namespace / type grouping.
+Do not propose "rename the banner" or "remove only the banner" — the banner
+is the symptom, not the bug; removing it without addressing the underlying
+multi-responsibility structure just hides the smell.
+
+The narrow exception is a **single** banner separating two genuinely
+co-located concerns that cannot be split (e.g. a templated public class and
+its required out-of-line specialisations in the same header for ADL reasons).
+One such banner is acceptable; two banners in the same header is a split
+signal.
+
 ## Comment style
 
 Three distinct comment forms; each has a specific role:
@@ -112,8 +186,11 @@ class Bar {};
 
 | Tier | Rule |
 |---|---|
+| **MUST** | Public declaration in a header (class, struct, free function, public method, enum, public constant) has no docblock — even when "obvious from name". The header is the contract; the next maintainer reads only the header. Narrow suppressions apply (see [What NOT to comment](#what-not-to-comment--suppress-list)). |
 | **MUST** | Public API whose semantics cannot be inferred from name + type alone (lifetime, ordering requirement, thread-safety, memory ownership) has no doc comment |
 | **MUST** | A comment directly contradicts the current code (stale comment) |
+| **SHOULD** | A header carries one or more section-divider banner comments (`// ---- X ----`, `// === X ===`, etc.) — a symptom of multi-responsibility structure that should be a file split or a namespace / type grouping. Single banner separating co-located ADL-required specialisations is exempt. |
+| **SHOULD** | An implementation-detail comment ("uses a hash map keyed by ...", "branch is faster on x86") sits in a header rather than in the `.cpp` — leaks coupling between contract and current implementation choice |
 | **SHOULD** | A class or struct has no brief (first doc-comment line) |
 | **SHOULD** | A raw-pointer member has no ownership annotation (owning / non-owning / optional-owning) |
 | **SHOULD** | A `#if ENABLE_UNIT_TESTS_WITH_FAKES` block (or equivalent test-bypass) has no `@note` explaining why the production code path is bypassed |

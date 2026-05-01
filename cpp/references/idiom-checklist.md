@@ -50,6 +50,28 @@ Run before writing. If any signal fires, ask whether the stated goal can be achi
 | New type count exceeds the distinct responsibilities in the problem statement | Wrong decomposition seam; the implementer may have solved a more general problem than asked |
 | Implementation is longer than the problem statement | Complexity may be incidental (over-engineering) rather than essential (domain complexity) |
 | A new `Manager`, `Handler`, or `Helper` class with no clear invariant | Name signals a grab-bag; split by responsibility or collapse to free functions |
+| New type expresses a generic shape that an existing language / standard / project facility already covers | Reinvention of a generic concept (range / view / span / pair / optional / variant). Use the standard form; introducing a domain-named wrapper hides what the type *is* and forces every reader to learn a new vocabulary for an old idea. See [Generic-shape reinvention](#generic-shape-reinvention) below. |
+
+### Generic-shape reinvention
+
+When introducing a new type, ask: *"Is the structural shape of this type a generic concept that already has a standard form?"* If yes, prefer the standard form unless there is a concrete justification for the wrapper.
+
+Common shapes and their standard forms:
+
+| Shape | Standard form |
+|---|---|
+| Pointer + count, read-only iteration | `core::array_ref<T>` (Unity) / `std::span<T>` (C++20) — has `begin / end / size / data / operator[]` for free |
+| Compile-time-sized fixed array | `core::fixed_array<T, N>` / `std::array<T, N>` |
+| "Either a value or nothing" | `std::optional<T>` |
+| Two related values returned together | a named struct (`pair` carries no semantic information at the call site) |
+| Type-erased "one of N alternative types" | `std::variant<...>` |
+| Borrowed iteration over an existing contiguous container | `core::array_ref<T>` constructed from the container; do not wrap |
+
+The smell, concretely: a class named `FooThingList` / `FooValueRange` / `FooViewOfBars` whose entire body is a constructor taking `(T*, size_t)` plus `begin / end / size`. That is `core::array_ref<T>` with extra steps. The wrapper is justified only when it carries semantics the generic form cannot — e.g. an invariant on the contents (`SortedAssetIds` is non-empty and sorted), a non-trivial constructor that validates, or a method whose meaning depends on knowing the elements are `T` specifically.
+
+Raise as **SHOULD**: replace with the standard form. Cite the standard type and what semantics, if any, the wrapper carries that the standard type does not — the author then either justifies the wrapper or removes it.
+
+**Do not raise** when the wrapper carries a real invariant the generic form cannot encode (the `SortedAssetIds` example above), when the type is part of a deliberately stable public ABI that pre-dates the standard form, or when the wrapper exists to forbid a dangerous overload (e.g. deleting `(T&&)` to forbid temporaries — the generic form would not).
 
 ### DRY check
 
@@ -170,10 +192,11 @@ Quick-reference of the helpers most commonly reinvented by new contributors. Gre
 |---|---|
 | Hand-rolled CRTP singleton template | Inherit from the existing `Singleton<T>` template |
 | File-static `g_Instance` + `Set/GetInstance()` free functions | `Singleton<T>` provides `Create(memLabel)` / `Destroy()` / `GetInstance()` / `GetInstancePtr()` / protected `SetInstance()` |
-| Test wants to install an alternative instance for a fixture | `Singleton<T>::ScopedOverride bind(&testInstance);` -- RAII, LIFO-nested, asserts on out-of-LIFO teardown |
-| Static instance definition macro | `DEFINE_SINGLETON_INSTANCE(MyType)` at .cpp scope (also defines the override pointer storage) |
+| Producer needs to bind an instance it allocated itself (e.g. an abstract base whose concrete subclass varies by configuration, or a constructor that takes runtime arguments) | `Singleton<T>::BindInstance(instance, memLabel)` — asserts on double-bind; transfers ownership; `Destroy()` calls `UNITY_DELETE` with the supplied label and nulls the active pointer |
+| Static instance definition macro | `DEFINE_SINGLETON_INSTANCE(MyType)` at .cpp scope |
+| Test wants to exercise mode-dependent logic without touching the production singleton | Make the logic a free function or member that takes `(const MyType&)` (or whatever non-singleton input is needed). Tests construct a stack-local concrete instance and call the `(const MyType&)` overload directly. The production no-arg form is a thin inline wrapper around `MyType::GetInstance()`. The Singleton itself stays single — tests never need to override the active instance. |
 
-The constructor of `Singleton<T>` does **not** auto-register the new object as the active instance, so tests are free to instantiate as many objects as they like on the stack and pick which one binds via `ScopedOverride`. This already addresses the "construct multiple test instances without disturbing the production singleton" use case without any constructor argument.
+The constructor of `Singleton<T>` does **not** auto-register the new object as the active instance, so tests are free to instantiate as many objects as they like on the stack and decide separately whether to bind one of them. The recommended testability shape is the dual-overload pattern in the table above; do **not** add a "scoped override" / "active-instance swap" mechanism to `Singleton<T>` itself — see `anti-patterns.md > Semantic contract weakening for testability`.
 
 ### Memory allocation -- `UNITY_NEW` / `UNITY_DELETE`
 

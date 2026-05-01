@@ -93,4 +93,39 @@ Raise as **SHOULD NOT** and issue a discussion request. Before the author procee
 
 ---
 
+## "Must stay aligned" comments as a substitute for shared code
+
+**Do not propose** "add a comment at both sites stating they must stay aligned" as
+a remediation for two pieces of code that share a non-trivial primitive (a parser
+loop, a dash-strip + case-insensitive compare, a token-table walk, a field-by-field
+copy, a header-byte layout). Comments enforce nothing. Two implementations sitting
+behind a "keep me in sync" comment are two implementations that **will** drift -- the
+comment is a marker for the future bug, not a guard against it.
+
+Treat this as a last-resort suggestion only. The reviewer should propose:
+
+1. **Extract the primitive into a shared helper.** This is the default. The cost of a
+   small free function in the canonical utility module (`Runtime/Utilities/Argv.{h,cpp}`,
+   `NativeKernel/Utilities/Word.h`, etc.) is always lower than the future drift cost.
+2. **Encode the alignment invariant in the type system.** `static_assert` on parallel
+   array sizes, a single source-of-truth table both consumers iterate, a tagged union
+   that makes the dependency unignorable.
+3. **Only when (1) and (2) are both genuinely impossible** -- e.g. the duplication
+   spans a binary boundary, or the two implementations live in repositories that
+   cannot share code -- consider the alignment comment as a marker, and pair it with
+   a tracked tech-debt ticket that names the future unification work.
+
+**Raise the underlying duplication finding** at the appropriate tier (SHOULD when
+the drift risk is real; MUST when the divergence already manifests as a bug).
+**Do not raise** the comment-only remediation as a finding in its own right; if
+extracting the helper is genuinely out of scope for the diff, suggest extraction
+in a follow-up ticket and SHOULD-defer rather than asking for a comment.
+
+The deeper principle: the cpp-review persona's purpose is to surface design and
+contract issues, not to paper over them with prose. A comment is a documentation
+tool for *intent that has no enforcement seam*; it is not a substitute for a
+seam that the reviewer chose not to build. When the seam is buildable, build it.
+
+---
+
 *Add new entries below this line as the team learns the persona's blind spots and over-eager patterns. After adding an entry, commit and push -- see [Contributing](../../README.md#contributing).*
