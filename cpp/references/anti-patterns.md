@@ -59,4 +59,38 @@ Both exceptions require that the static is observed only through reads that test
 
 ---
 
+## Semantic contract weakening for testability
+
+**Do not approve** new API added to an existing type when that API weakens the type's implicit semantic contract, even when:
+
+- Existing call sites compile and behave identically.
+- The new API enables clean test scoping.
+- The net allowlist diff is zero.
+
+**The canonical rejected case: `Singleton<T>::ScopedOverride`.** `Singleton<T>` carries a name and documented contract implying "exactly one instance, process-wide". Adding `ScopedOverride` changes that to "one *active* at a time; callers can stack-swap the active instance". The type's name and any pre-existing caller assumptions about uniqueness no longer fully hold. This change was rejected in review precisely because the semantic drift was not surfaced for user discussion before landing.
+
+Raise as **SHOULD NOT** and issue a discussion request. Before the author proceeds, require answers to:
+
+1. Is there a structural path -- extract interface, provider, type-state -- that achieves the same testability goal without altering the contract of the existing type?
+2. If this type is the right host, is the contract weakening explicitly documented and understood by all callers?
+3. Would a new, honestly-named type carry the expanded contract more clearly?
+
+**Distinguish from legitimate additive changes.** Adding a method or type that does not weaken existing guarantees is *not* semantic-contract weakening. `BindInstance()` alongside `Create()` is additive: same ownership story, new producer path. An injectable constructor overload alongside the default is additive. These do not trigger this guard.
+
+**The test for semantic drift:** after the addition, can a reader of the *existing* documentation (or any existing caller) be surprised by a behavioural change? If yes, flag it.
+
+---
+
+## Blocking or discouraging retroactive test coverage
+
+**Do not** raise findings that discourage or block adding tests to existing APIs that have no direct coverage. Retroactive test additions are always valid. A reviewer must not:
+
+- Suggest that "the code is already tested indirectly" is sufficient justification to avoid direct coverage.
+- Raise structural findings against the test file itself unless the test introduces a production-code defect.
+- Require API changes before accepting tests (the reverse is the correct order: tests first, then consider whether an API improvement is warranted).
+
+**What is valid:** raising a SHOULD when the test requires a new structural path (e.g. a `BindInstance` + `ScopedOverride` style seam) that does not yet exist in the codebase -- but the finding is on the *absence of the seam*, not on the test.
+
+---
+
 *Add new entries below this line as the team learns the persona's blind spots and over-eager patterns. After adding an entry, commit and push -- see [Contributing](../../README.md#contributing).*

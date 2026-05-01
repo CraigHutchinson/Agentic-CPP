@@ -169,6 +169,15 @@ Before producing any finding, the reviewer **must** load enough context to make 
 9. **Check for legacy idioms and commenting.** Load `../cpp/references/modernisation-playbook.md` and apply its tier tables to all new and touched code. Apply **after** step 7 so project utilities (reinvention catalogue) take precedence over generic modernisation. In parallel, load `../cpp/references/commenting-hygiene.md` and apply its MUST/SHOULD table to every new or changed class, struct, and function declaration.
 10. **Check for global state that hurts testability.** Look for `s_*` / `g_*` file-statics, function-local statics owning cached state, and ad-hoc singletons. The dominant tell is a `#if ENABLE_UNIT_TESTS_WITH_FAKES` bypass branch -- it is the author's admission the design is testability-hostile. Raise **MUST** when the bypass exists; **SHOULD** when no bypass exists yet but adding alternative test configurations would force one. Remediation: derive from `Singleton<T>` at `Modules/NativeKernel/Include/NativeKernel/Utilities/Singleton.h`. See `../cpp/references/modernisation-playbook.md > Globals, singletons, and testability seam` for the full pattern and worked example.
 
+    **Three-path check for testability changes.** When the diff is adding testability to existing code, verify which path was taken -- in preference order:
+    - *Additive*: new method/type/overload alongside unchanged existing surface -- generally valid; no existing semantics touched.
+    - *Structural refactor*: splits or extracts to satisfy SOLID -- valid when the new shape serves all existing use-cases and the motivation is design, not pure test expediency. Check that every existing call site is still semantically served by the new structure.
+    - *Signature change*: modification to an existing method's signature -- raise **SHOULD NOT** and request user discussion; accepted only when no additive or structural path exists.
+
+    **Semantic contract drift check.** When new API is added to an existing type, ask: "Can a reader of the existing documentation be surprised by a behaviour change?" If yes, raise **SHOULD NOT** even if existing callers compile cleanly. Named pattern: "Singleton is no longer single" -- adding stack-override semantics to a type whose name implies uniqueness is the canonical case (see `anti-patterns.md > Semantic contract weakening for testability`).
+
+    **Retroactive test coverage.** Adding tests for existing APIs with no direct coverage is always valid. Do not raise findings that discourage or block this. If a test cannot be written without a missing seam, raise a SHOULD on the *absence of the seam*, not on the test.
+
 If the diff is large, summarise each commit individually before producing findings -- this surfaces architectural drift across the chain that hunk-by-hunk review misses.
 
 ## Layered design review

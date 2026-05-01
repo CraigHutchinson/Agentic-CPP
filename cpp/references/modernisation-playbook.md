@@ -206,6 +206,31 @@ If `Singleton<T>` is missing a feature your test pattern needs, **extend it addi
 
 **Suppression:** when the cache truly is process-immutable for the lifetime of the binary (compile-time-derived constant, configuration loaded once before any test fixture runs, no `#if TEST_BUILD` bypass exists) the file-static is acceptable. The tell that you do **not** have this case: a test-only branch in the accessor.
 
+### Testability paths -- choose in order
+
+When existing code needs to become testable, three paths exist. Choose the earliest applicable:
+
+**1. Additive API** -- add a new static method, constructor overload, or type *alongside* the existing surface. Existing call sites are unchanged; no semantic contract is touched. `BindInstance()` alongside `Create()` is the exemplar: same ownership story, new producer path for abstract types. *Prefer when the existing API shape is correct but lacks an entry point for caller-supplied or injected instances.*
+
+**2. Structural refactor** -- extract an interface, split a class along a natural SOLID boundary, or pull state into a provider class. Existing call sites may need updating, but the motivation is principled design improvement, not test expediency. Valid when the type owns too many responsibilities and the split serves *all* consumers, not only tests. The structural boundary must be valid for all current use-cases independently of whether tests exist. *Prefer when the type's shape is the problem, not just the entry point.*
+
+**3. Signature change on an existing method** -- only when no additive or structural path exists, and only after user discussion with clear written justification. Changing an existing API solely for testability breaks caller assumptions that cannot be recovered from the diff alone.
+
+**What is not a valid path:** weakening the semantic contract of an existing type to accommodate tests (see `anti-patterns.md > Semantic contract weakening for testability`). `Singleton<T>` has an implicit "exactly one instance" contract; adding `ScopedOverride` changes that contract without changing the name. This is semantic drift and must be surfaced for user discussion before landing, regardless of whether existing call sites still compile.
+
+### Retroactively adding test coverage
+
+Adding tests for existing APIs that have no direct coverage is always valid and requires no justification. The review team **must not** block or discourage this on the grounds that "indirect coverage is sufficient" or "the existing API would need to change". The correct order is: write the tests first against the existing API; then, if tests reveal a seam is missing, evaluate which testability path above to take.
+
+Test files may freely:
+
+- Construct derived instances on the stack (`Singleton<T>` does not auto-register on construction).
+- Use `Singleton<T>::ScopedOverride` to bind and unbind within each fixture.
+- Hard-reset static state in fixture setup/teardown via `Destroy()` to prevent cross-test leakage.
+- Introduce a local test type (`TestSingletonHolder`) to avoid colliding with production static storage.
+
+If a test cannot be written cleanly without a structural change that would be otherwise unmotivated, surface the gap: raise a SHOULD on the *absence of the testability seam*, not on the test itself, and let the user decide whether to add the seam or defer coverage.
+
 ## Worked examples
 
 ### Example A -- hand-rolled view -> `core::array_ref`
