@@ -217,7 +217,7 @@ Raise **no** finding for absent comments on any of the following:
 
 ## Project-specific conventions
 
-If an org overlay is present (`../org/references/`), load it after this file. The overlay defines project-specific comment markers (e.g., `// LEGACY:` conventions), policy allowlist entry requirements, and memory-ownership annotation forms.
+**Org overlay check:** If `../unity-references/` exists, load any `*-commenting.md` file there after this file. It defines project-specific comment markers (e.g., `// LEGACY:` conventions), policy allowlist entry requirements, and memory-ownership annotation forms that supplement or override the generic rules above.
 
 ---
 

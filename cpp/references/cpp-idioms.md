@@ -172,9 +172,9 @@ A free function whose name carries the class as a prefix (`<Class><Method>(...)`
 
 Quick-reference of the shapes most commonly reinvented. Grep here **before** approving any new local helper of the same shape.
 
-If an org overlay is present (`../org/references/`), load it now -- org-specific utilities (project string libraries, container types, argv helpers, singletons, memory allocators) are catalogued there with exact file paths and function names.
+**Org overlay check:** If `../unity-references/` exists, load any `*-reinvention.md` file there first -- it carries project-specific utilities with exact file paths and function names that supersede the generic shapes below. Entries marked `[OVERRIDE]` take precedence for the named shape.
 
-For projects without an org overlay, check these generic shapes before writing a new helper:
+For projects without an org overlay (or for shapes not covered by it), check these generic shapes before writing a new helper:
 
 | Shape | Check for |
 |---|---|
@@ -191,7 +191,7 @@ For projects without an org overlay, check these generic shapes before writing a
 ### Project-level boundary rules
 
 - Cross-platform: include paths are case-sensitive on Linux / macOS. Always match the on-disk filename casing exactly (`String.h`, not `string.h`).
-- If an org overlay is present, load it for project-specific boundary rules (allowed header contents, module-crossing restrictions, policy allowlist conventions).
+- **Org overlay check:** If `../unity-references/` exists, load any `*-codebase.md` file there for project-specific boundary rules (allowed header contents, module-crossing restrictions, policy allowlist conventions).
 
 ---
 

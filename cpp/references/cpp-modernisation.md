@@ -23,7 +23,7 @@ The "Migration cost is not a suppression reason" rule from `cpp-anti-patterns.md
 
 ## Project-specific overlay
 
-If an org overlay is present (`../org/references/`), load it before applying the tier tables below. The overlay defines which project types are preferred over their `std::*` equivalents and which standard-library types are approved for the project. Without an org overlay, prefer `std::*` types as written in the tier tables.
+**Org overlay check:** If `../unity-references/` exists, load any `*-modernisation.md` file there before applying the tier tables below. Entries in that file marked `[OVERRIDE: allocator]`, `[OVERRIDE: ABI]`, or `[OVERRIDE: historical]` take precedence over the `std::*` equivalents listed here. Without an org overlay, prefer `std::*` types as written in the tier tables.
 
 ## Memory and lifetime
 

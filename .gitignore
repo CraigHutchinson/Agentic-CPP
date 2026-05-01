@@ -2,8 +2,10 @@
 prism/
 update-project-schedule/
 
-# Org overlay -- standalone in-folder clone (unity GHE), not tracked here
-org/
+# Org overlay -- standalone in-folder clone (unity GHE), not tracked here.
+# Clone the internal repo to this path to enable org-specific skill overlays:
+#   git clone <unity-ghe-url> ~/.cursor/skills/cpp/unity-references
+cpp/unity-references/
 
 # OS
 .DS_Store

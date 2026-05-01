@@ -33,10 +33,10 @@ Follow in order. Do not skip steps.
 Check whether an org overlay is present:
 
 ```bash
-ls ~/.cursor/skills/org/references/ 2>/dev/null
+ls ~/.cursor/skills/cpp/unity-references/ 2>/dev/null
 ```
 
-If the org overlay directory exists, load the project-init overlay file it contains (e.g., `~/.cursor/skills/org/references/*-project-init.md`). The overlay file defines project-specific detection commands and the additional constraint block to append in Step 3.
+If the org overlay directory exists, load the project-init overlay file it contains (e.g., `~/.cursor/skills/cpp/unity-references/*-project-init.md`). The overlay file defines project-specific detection commands and the additional constraint block to append in Step 3.
 
 Without an org overlay, proceed as a **generic** C++ project.
 

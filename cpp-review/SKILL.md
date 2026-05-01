@@ -274,7 +274,21 @@ N. [MUST / L1-ESCALATION-STOP] Module/Foo.h:1 -- single-implementation interface
 
 ## Project codebase conventions
 
-If an org overlay is present (`../org/references/`), load it here. The overlay provides the project-specific codebase rules that apply on top of generic C++ hygiene (preferred types, memory allocation conventions, header boundary rules, reinvention catalogue extensions). When raising any finding from the overlay, cite the overlay document so the author can verify and (if disagreeing) propose an update to the convention document rather than just rebutting the finding.
+**Org overlay check (mandatory -- do before starting any review pass):**
+
+Check for `../cpp/unity-references/`. If the directory exists, load ALL files within it in alphabetical order:
+
+| File pattern | Provides |
+|---|---|
+| `*-codebase.md` | Project-wide codebase rules: header boundaries, dependency constraints, policy allowlist conventions |
+| `*-commenting.md` | Project comment conventions: additional markers, ownership annotation forms, allowlist entry requirements |
+| `*-idioms.md` | Project idiom extensions: additional API design patterns, module layout, naming conventions |
+| `*-modernisation.md` | Project type preferences: which `std::*` types the project replaces with in-house equivalents (`[OVERRIDE]` entries) |
+| `*-reinvention.md` | Project reinvention catalogue: existing utilities to use instead of rolling new ones |
+
+Findings sourced from an overlay file are cited as `../cpp/unity-references/<file>.md > <section>` so the author can verify the convention and propose updates to the overlay rather than just rebutting the finding.
+
+If no overlay directory exists, apply only the generic references loaded above.
 
 ## Findings format
 

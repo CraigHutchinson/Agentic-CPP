@@ -61,7 +61,7 @@ Apply each step in order before and during writing. The steps mirror the four la
 **Highest-leverage step.** A utility written from scratch that already exists in the project produces a MUST finding in review and must be deleted or replaced.
 
 1. **Identify the shape** of what you are about to write -- "case-insensitive compare", "argv flag check", "global process-context cache", "small string container".
-2. **Grep the reinvention catalogue** (`../cpp/references/cpp-idioms.md > Reinvention catalogue`) for that shape. If a project utility already covers it, use that utility and stop.
+2. **Grep the reinvention catalogue** (`../cpp/references/cpp-idioms.md > Reinvention catalogue`) for that shape. If `../cpp/unity-references/` exists, also check any `*-reinvention.md` file there -- it carries project-specific utilities that supersede the generic catalogue. If a project utility already covers it, use that utility and stop.
 3. **Locate the correct home** for new code by asking: "If a teammate searched for this functionality six months from now, where would they look?"
    - Generic string helper → the project's utility / kernel directory
    - Argv classification → the project's shared utilities layer
@@ -131,7 +131,14 @@ Apply to every new or changed public declaration.
 
 **Project types first** (MUST on public API, SHOULD in implementation):
 
-If an org overlay is present (`../org/references/`), load it now. It defines the project-specific type table (which `std::*` types to replace with project equivalents) and any memory allocation conventions. Without an org overlay, use `std::*` types as specified in `cpp-modernisation.md > Tier tables`.
+**Org overlay check (mandatory -- do before writing any project type):**
+
+Check for `../cpp/unity-references/`. If the directory exists, load in order:
+1. Any `*-modernisation.md` -- project type preferences; entries marked `[OVERRIDE]` replace the `std::*` defaults in the tier tables.
+2. Any `*-reinvention.md` -- project reinvention catalogue; check before writing any new utility.
+3. Any `*-idioms.md` -- project idiom extensions.
+
+If the directory is absent, use `std::*` types as specified in `cpp-modernisation.md > Tier tables`.
 
 **Idioms (write modern, not legacy):**
 
