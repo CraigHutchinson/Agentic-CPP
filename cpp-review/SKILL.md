@@ -54,6 +54,45 @@ Task(
 
 For a stacked PR chain, name the diff range as `<base>..<head SHA>` and link the design doc with a stable anchor.
 
+## Stranger-reviewer question pass
+
+Every review opens with this pass before the L0–L3 analysis. The goal is to surface gaps that a reviewer with no session history, no shared design doc, and no knowledge of the author's intent would hit. Output is a `## Questions for the author` block at the top of the report.
+
+### When a question fires
+
+A question fires when any of the following is true and the answer is **not already present** in a doc comment, a cited design-doc anchor, or a type-system expression:
+
+| # | Signal | Closure type |
+| --- | --- | --- |
+| 1 | New public declaration with no doc comment | `DOC-COMMENT` |
+| 2 | Calling-order or precondition constraint visible in the body (assert, check, prose comment) but not in the header or type system | `CODE-CHANGE` or `DOC-COMMENT` |
+| 3 | Method touches shared state; no thread-safety note on the declaration | `DOC-COMMENT` |
+| 4 | Change of non-trivial scope (new public API, new module, boundary crossing) with no cited design-doc anchor | `DESIGN-DOC` |
+| 5 | Raw pointer member; no ownership annotation (`// owning`, `// non-owning`) | `DOC-COMMENT` |
+| 6 | `noexcept` wrapping a potentially-throwing call; no `@note` on the terminate-on-failure contract | `DOC-COMMENT` |
+| 7 | Policy-allowlist entry with no retirement note | `DOC-COMMENT` |
+| 8 | Test-build bypass (`#if ENABLE_UNIT_TESTS_WITH_FAKES` or equivalent) with no `@note` on the production/test divergence | `DOC-COMMENT` |
+| 9 | Type stored in a `memcpy`-relocating container (project small-vector, inline-storage vector, or similar) with no `static_assert` on trivial relocatability | `CODE-CHANGE` |
+| 10 | New artifact placed in a non-canonical location with no explanation | `DESIGN-DOC` or `DOC-COMMENT` |
+
+**Suppress a question when:**
+- The answer is already in a doc comment, type-system expression, or cited design anchor in the diff.
+- The same gap is already raised as a MUST finding -- don't duplicate it as a question.
+- The code is purely implementation-private (anonymous namespace, unexported private method) and surrounding context makes the intent clear.
+
+### Question format
+
+```text
+QN. [CLOSURE-TYPE] <file>:<line> -- <the question a stranger would phrase, one sentence>
+    Closes when: <the specific artifact that would answer it>
+```
+
+`CLOSURE-TYPE` is one of `DOC-COMMENT`, `DESIGN-DOC`, or `CODE-CHANGE`.
+
+### Question block placement
+
+Emit `## Questions for the author` as the **first block** of the report, before findings. Omit the block entirely if no questions fire -- do not emit an empty section.
+
 ## Plan review mode
 
 Invoke when the input is a design document, implementation plan, or Claude plan-mode output -- not a code diff. The goal is to catch L0/L1/L2 issues before any code is written, where redesign costs nothing.
@@ -208,6 +247,16 @@ Ask these before reading any code. They establish whether the PR is doing the ri
 4. **Is the stated goal actually achieved in this commit?** If the PR says "introduce caching" but caching is deferred to a follow-up, the PR does not deliver its stated goal. That is a scope / description mismatch, not a design defect, but it affects how reviewers and future git-blame readers understand the state of the code.
 5. **Is this the simplest correct solution?** Count the new types, files, and abstractions the diff introduces. Does that count match the number of distinct responsibilities in the problem statement? A solution more complex than the problem signals that the implementer may have solved a more general problem than the one asked, or decomposed at the wrong seam. Raise as SHOULD when excess complexity is structural (more types than problems); upgrade to MUST when core functionality is deferred to a follow-up and the current PR delivers only scaffolding. See `../cpp/references/cpp-idioms.md > Simplification and DRY` for the signal table.
 
+6. **Does the prose describe trunk-state realities, or mid-development history?** A fresh reader of the final commit has not seen the iterations that produced it -- they see only the diff vs trunk and the trunk that existed before. Prose (commit messages, code comments, PR descriptions) must answer questions a fresh reader actually has, not questions the author almost answered during a session that didn't survive. Two specific shapes recur:
+
+   - **Defensive comments justifying a design choice the author almost made.** A `// We use operator== here, not CaseInsensitiveEqual, because these tokens are canonical filenames already normalised by the writer -- case folding would silently merge distinct resources` comment on trunk-shape code where no case-folding helper was ever introduced by the diff is noise -- it answers a question the diff does not raise. Code comments justify what is in the code, not what is intentionally absent from it. The cue is a comment that only makes sense if the reader has seen the *previous iteration* of this PR, not just trunk and the final diff. Raise as **SHOULD**; suggest deletion (or, if the rationale is genuinely useful at trunk, move it to the commit body where it documents the choice once and does not bloat every future read of the file).
+
+   - **PR descriptions or commit messages citing a problem that only existed in a discarded iteration.** "Replaces parallel-table drift" when the trunk-state problem was a per-call-site `if (str == "...")` chain (no parallel tables existed) describes an early helper-design step that the final design dropped. The fresh reader looks for the parallel tables, finds none, and loses trust in the rest of the description. Raise as **SHOULD**; pair with a one-line proposal for the accurate trunk-state problem statement.
+
+   Test: read the prose with no access to the development session transcript. If it raises a question that the diff vs trunk does not answer, the prose has leaked development history. Cite the loaded `AGENTS.md > Authoring & Review Hygiene` clauses on commit-message and comment hygiene if the project's overlay names them.
+
+   When this item fires, append a `## Suggested PR Summary` block at the end of the report per [Suggested PR Summary format](#suggested-pr-summary-format). The reviewer's stranger-reader pass has already produced the understanding needed to write a clean trunk-state synthesis; emitting the draft directly is faster than asking the author to translate a prose-drift finding back into prose.
+
 **L0 escalation tag**: `[MUST / L0-ESCALATION-STOP]` or `[SHOULD / L0]`. When an L0 MUST fires, list any deferred L1–L3 items under "Deferred pending L0 redesign." Do not elaborate them.
 
 ### L1 — Structural / Boundary
@@ -309,17 +358,49 @@ N. [SEVERITY] <file>:<line> -- <one-line rationale>
 | **NICE**         | Cosmetic, idiomatic, or scope-creep refactor. Reviewer opinion; author may decline without rebuttal.                                                             |
 | **PRE-EXISTING** | Bug or smell in surrounding code, not introduced by this PR. Do not block merge. **Quick-win exception:** if the fix is a one-line change, sits in a file already touched by the diff, and doesn't expand the PR's blast radius, suggest folding it in -- mark the finding `[PRE-EXISTING / QUICK-WIN]` and include the suggested patch. The author decides whether to fold or defer to a follow-up ticket. |
 
-**Group order in output:** MUST first, then SHOULD, then NICE, then PRE-EXISTING.
+**Report order:**
+1. `## Questions for the author` -- stranger-reviewer question pass (omit if empty).
+2. Numbered findings: MUST first, then SHOULD, then NICE, then PRE-EXISTING.
+3. Up to four closing sections (below).
 
 **Skip empty categories** -- if no MUST findings, omit the MUST section. **Do not invent findings to fill categories.** A short, accurate review beats a long padded one.
 
-End the report with three short sections:
+End the report with up to four sections:
 
 - **Findings deliberately not raised** -- categories considered and rejected, with one-line reasons. This trains the reader on the persona's anti-pattern guard. **Apply the guard's overriding principle first** (`../cpp/references/cpp-anti-patterns.md` > "Overriding principle"): a suggested change that reduces a class of bug at the call site, encodes an invariant in the type system, or eliminates reinvention of a project utility is **never** a cosmetic suppression -- it must be raised (SHOULD or MUST). Migration cost is not a suppression reason; it informs the tier, not the decision to flag. Suppress only when the change is a pure stylistic preference with no measurable safety / clarity / reuse improvement.
 - **Self-evaluation** -- before submitting, re-read each MUST finding and ask: "Would this finding survive a five-minute conversation with the author?" If not, downgrade to SHOULD or drop. Note any downgrades here.
-- **Rewrite Brief** -- emit this block **only when one or more L0 or L1 MUST findings fire**. It is the sole input the executor persona (`cpp-simplify`) needs; write it so an agent with no other context can apply every change correctly. Follow the format in [Rewrite Brief format](#rewrite-brief-format) exactly.
+- **Rewrite Brief** -- emit **only when one or more L0 or L1 MUST findings fire**. It is the sole input the executor persona (`cpp-simplify`) needs; write it so an agent with no other context can apply every change correctly. Follow the format in [Rewrite Brief format](#rewrite-brief-format) exactly.
+- **Suggested PR Summary** -- emit **only when one or more L0 prose-drift findings (item 6) fire**. The reviewer's stranger-reader pass has already produced the understanding needed; synthesise a clean trunk-state PR description from that understanding so the author has a draft to accept, edit, or decline rather than having to translate a prose-drift finding back into prose. Follow the format in [Suggested PR Summary format](#suggested-pr-summary-format) exactly. Omit entirely when no prose-drift findings fire.
 
 ## Worked examples
+
+### Example Q -- Stranger-reviewer question pass
+
+```text
+## Questions for the author
+
+Q1. [DOC-COMMENT] Runtime/Foo/FooManager.h:47 -- `FooManager::Register()` acquires
+    m_Mutex in its implementation but has no thread-safety note on the declaration;
+    a caller reading only the public header cannot tell whether this is safe to call
+    from a background thread.
+    Closes when: `@note Thread-safe.` or `@note Not thread-safe -- caller must hold
+    m_Mutex.` is added to the declaration.
+
+Q2. [DESIGN-DOC] <diff-wide> -- no design document or tracker anchor is cited for
+    the new per-call resolution strategy; a reviewer cannot assess whether the
+    per-call cost bound is intentional and accepted without a linked spec.
+    Closes when: a stable design-doc anchor or ticket reference is cited in the doc
+    comment on `GetCurrentFoo()` (e.g. `@see https://docs.example/foo-resolution`
+    or `@note EAD-1234 approved per-call cost; cached accessor follows in EAD-1235`).
+
+Q3. [CODE-CHANGE] Core/Foo/FooList.h:12 -- `FooEntry` is stored in a project vector
+    type that moves elements via memcpy but has no
+    `static_assert(std::is_trivially_copyable_v<FooEntry>)` or equivalent
+    relocatability guarantee; a non-trivially-relocatable `FooEntry` is a latent
+    corruption bug under reallocation.
+    Closes when: a `static_assert` on trivial relocatability is added adjacent to the
+    type definition, or a non-relocating container is used instead.
+```
 
 ### Example 0 -- L0 intent / decomposition (pre-emptive scaffolding)
 
@@ -427,7 +508,91 @@ Findings deliberately not raised:
               the commit body.
 ```
 
-### Example 7 -- Plan review (L0 wiring gap + Revised Plan)
+### Example 7 -- L0 prose drift (development-stage history leaked into trunk prose)
+
+```text
+1. [SHOULD / L0] Core/Src/Dispatch/CommandDispatch.cpp:280 -- the new
+   four-line `// token strings are canonical command names produced by the
+   writer -- case folding would silently merge distinct commands that share
+   a prefix` comment on the token-dispatch block defends against a migration
+   (to a case-insensitive comparison helper) that never appears in the diff.
+   The block is identical to trunk; a fresh reader sees the comment and looks
+   for the contrast it implies, finds none, and is left wondering what the
+   comment is warning them away from.
+   Evidence: L0 (intent): `git diff origin/main` shows zero changes to this
+             block; the comment exists only because the author considered and
+             rejected a case-folding migration during the development session.
+             AGENTS.md > Authoring & Review Hygiene > Code Comments: comments
+             justify what the code does, not what it deliberately does not do.
+   Suggested: delete the comment. If the case-sensitivity rationale is
+              genuinely useful at trunk, move it to the commit message body
+              of the commit that established the policy, where it documents
+              the decision once without sitting on every future read of this
+              file.
+
+2. [SHOULD / L0] PR description §"Two problems are addressed at once": the
+   "Parallel-table drift" item describes a problem that did not exist on
+   trunk -- the pre-PR code used per-call-site `if (str == "cmd-a") ...
+   else if (str == "cmd-b")` chains, not parallel `names[]`/`handlers[]`
+   arrays. The phrase refers to an early helper-design iteration (a two-array
+   prototype) that the final design replaced with a single `CommandMapping<T>`
+   table. A fresh reader of the merged PR opens trunk, looks for the parallel
+   tables the description claims to fix, finds none, and discounts the rest
+   of the problem statement.
+   Evidence: L0 (intent): `git log origin/main -- Core/Src/Dispatch/
+             CommandDispatch.cpp` confirms every pre-PR call site is an inline
+             comparison chain, not a parallel-array shape; the phrase
+             originates in a helper-design discussion preserved in the session
+             transcript, not in any trunk code.
+   Suggested: rewrite §"Two problems are addressed at once" as a single-problem
+              statement: command names were matched case-sensitively
+              (`GetOption` uses `operator==`) but the documented interface
+              accepted any casing, so `--output COMPACT` was rejected even
+              though `--output compact` was accepted. Drop the parallel-table
+              bullet entirely; the consolidation into `CommandMapping<T>` is
+              a consequence of the helper's design, not a standalone problem
+              statement.
+```
+
+Because finding 1 is an L0 prose-drift SHOULD, the `## Suggested PR Summary` block is emitted at the end of the report:
+
+```markdown
+## Suggested PR Summary
+
+### Problem (one sentence)
+Switch values were matched with `operator==` while switch names used case-insensitive
+matching, so `--output COMPACT` was silently rejected where `--output compact` was
+accepted -- a papercut for any launcher or CI script that does not preserve exact casing.
+
+### What this PR does
+- Adds `CommandMapping<T>` + `MatchCommandValue` to `Core/Src/Dispatch/Dispatch.h`: a
+  header-only template that looks up a typed value from a single mapping table, with
+  per-call-site comparison policy (case-insensitive by default, case-sensitive opt-in).
+- Migrates three argv parsers across two TUs to the new helper.
+
+### Policy decisions
+
+| Flag | Comparison | Rationale |
+|---|---|---|
+| `--output`, `--log-level` | case-insensitive | user-input flags; any casing should be accepted |
+| `--runtime-profile` | case-sensitive | profile names are an externally-versioned contract; case-folding could mask a typo the existing diagnostic would otherwise surface |
+
+### Test coverage
+Eight unit tests in `Core/Src/Dispatch/DispatchTests.cpp` pin the helper contract
+(match, case-insensitive default, case-sensitive opt-in, no-match null, empty input,
+empty mappings, null-token row skipped, first-wins on duplicates). Migrated parser sites
+are covered by construction: the per-site mapping tables are mechanical translations of
+the pre-existing if-else token spellings.
+
+### Follow-up
+- Cross-file `--runtime-profile` table dedup (`Core/Dispatch.cpp` /
+  `Runtime/TestRunner.cpp`): a shared definition crosses a module boundary; tracked
+  in TICKET-99.
+```
+
+Note what this draft omits relative to a session-history-contaminated description: no "parallel-table drift" problem statement (trunk never had parallel tables), no mention of the intermediate design that was considered and discarded.
+
+### Example 8 -- Plan review (L0 wiring gap + Revised Plan)
 
 Plan document reviewed (condensed):
 
@@ -624,6 +789,31 @@ Emit this block at the end of the plan-review findings report whenever one or mo
 <one paragraph: what the revised plan should describe; what a reader of the clean plan understands it will deliver>
 ```
 
+## Suggested PR Summary format
+
+Emit this block at the end of the findings report when one or more L0 prose-drift findings (L0 item 6) fire. The reviewer has already done the full stranger-reader pass; the summary is a by-product of that understanding. Write it so the author can accept, edit, or decline without re-reading the findings report.
+
+The summary describes what the diff actually does on trunk -- no development-history leakage, no reference to discarded iterations or intermediate designs.
+
+```markdown
+## Suggested PR Summary
+
+### Problem (one sentence)
+<what the diff fixes, stated from trunk's perspective with no reference to discarded iterations>
+
+### What this PR does
+- <bulleted concrete changes; name files and types when the name carries meaning>
+
+### Policy decisions (if applicable)
+<table or bullets for per-site choices that warrant rationale; omit section entirely if all sites follow the same policy>
+
+### Test coverage
+<what the new or changed tests pin; note what is not covered and why when that is non-obvious>
+
+### Follow-up
+<only real planned follow-ups; omit section entirely if none>
+```
+
 ## Honest limitations
 
 The persona cannot reliably catch:
@@ -712,12 +902,22 @@ PRE-EXISTING items surfaced but out of scope for this PR.
 
 The retrospective is a re-access opportunity: the author can read it, redirect any deferred items into a follow-up ticket, and use the "Decisions made without a directive" table to decide which assumptions are worth encoding as new reference material.
 
-## Folding fixes into the chain
+## Landing fixes on a published chain
 
-When a review fix lands on an already-pushed PR chain:
+The rule is **traceability over linearity**. Once a PR has reviewer comments (human or bot) on its commits, fixes addressing those comments land as **new commits on top of the chain**, not as fixup-squashes into the originating commit. A reviewer revisiting the PR must be able to see, in isolation, the change that was made in response to their feedback; folding the fix back into the originating commit erases that signal and forces them to diff the whole PR again.
 
-- Apply the fix to the commit that introduced the issue (preserves "each commit builds + tests pass").
+| Stage of the PR | Where the fix goes | Why |
+|---|---|---|
+| Pre-publish (branch exists locally or is pushed but has no reviewer comments yet) | Fold into the originating commit via `--fixup` + `--autosquash` | No review signal exists yet; clean per-commit history serves the eventual reviewer better than a noisy fix-on-fix chain |
+| Post-comment (any reviewer -- human, u-pr bot, CodeRabbit, etc. -- has left a comment that the fix addresses) | New commit on top of the chain, with a subject that names the area + change and a body that cites the review | Traceability: a future reviewer can see what changed in response to the comment without diffing the whole PR; the comment-to-fix mapping survives the merge |
+| Pre-existing finding the author discovered themselves while iterating, no reviewer involvement | Fold into the originating commit | Same rationale as pre-publish |
+
+For post-comment fixes, the new commit's message should:
+- Subject: name the area and the concrete change (e.g. `Editor/Application: skip NULL token rows when formatting -overrideTextureCompression accepted values`).
+- Body: a one- to three-line description of *what* changed and *why*, ending with a citation to the review (e.g. `Caught by u-pr review on PR-105000.` or `Addresses review comment from @reviewer at <permalink>.`). The citation is what makes the commit traceable; it is not optional.
+
+For pre-publish folds:
 - Use `git tag <topic>-pre-<change-name>` before any reset / amend / rebase so the pre-rewrite state is recoverable.
 - After fold: rebuild + retest locally, then force-push and re-trigger CI on the new chain head.
 
-This pattern is covered in detail in AGENTS.md `Authoring & Review Hygiene > Git Workflow Hygiene`.
+This policy interacts with the project's git-workflow conventions in `AGENTS.md > Authoring & Review Hygiene > Git Workflow Hygiene`. When the project's convention disagrees with this rule (e.g. a project that mandates squash-merge and explicitly accepts loss of per-fix traceability), the project rule wins and this section becomes advisory for the local branch state only.
