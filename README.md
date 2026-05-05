@@ -143,7 +143,7 @@ cpp-simplify             ← apply Rewrite Brief
 ## Self-test suite
 
 `cpp-review/self-test/` contains C++ snippets with deliberate defects and YAML oracle
-files naming which findings must and must not fire. The evaluation harness in `eval/`
+files naming which findings must and must not fire. The evaluation harness in `cpp/eval/`
 calls the Claude API, scores each run, and records token usage.
 
 | Case | Checks exercised | Must-fire |
@@ -153,9 +153,9 @@ calls the Claude API, scores each run, and records token usage.
 | `02-l0-dead-code` | L0 production-caller audit | 1 |
 
 ```sh
-pip install -r eval/requirements.txt
+pip install -r cpp/eval/requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...
-python eval/eval.py --case all --model claude-sonnet-4-6
+python cpp/eval/eval.py --case all --model claude-sonnet-4-6
 ```
 
 Release tags (`v*`) are gated on ≥ 80% recall via GitHub Actions. Token usage and

@@ -5,7 +5,7 @@ Two scripts for testing the `cpp-review` skill and generating versioned release 
 ## Setup
 
 ```sh
-pip install -r eval/requirements.txt
+pip install -r cpp/eval/requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
@@ -13,13 +13,13 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 ```sh
 # All cases, single pass
-python eval/eval.py --case all --model claude-sonnet-4-6
+python cpp/eval/eval.py --case all --model claude-sonnet-4-6
 
 # Single case
-python eval/eval.py --case cases/00-comprehensive --model claude-sonnet-4-6
+python cpp/eval/eval.py --case cases/00-comprehensive --model claude-sonnet-4-6
 
 # Consistency measurement (3 independent passes per case)
-python eval/eval.py --case all --model claude-sonnet-4-6 --runs 3
+python cpp/eval/eval.py --case all --model claude-sonnet-4-6 --runs 3
 ```
 
 Exit codes: `0` all cases pass, `1` one or more fail.
@@ -48,7 +48,7 @@ Used by `.github/workflows/self-test.yml` during the release job.
 
 ```sh
 # Compute delta vs. a previous tag
-python eval/release_notes.py --prev-tag v0.1.0 --model claude-sonnet-4-6
+python cpp/eval/release_notes.py --prev-tag v0.1.0 --model claude-sonnet-4-6
 ```
 
 Outputs a markdown table to stdout and writes `body` to `GITHUB_OUTPUT` when
@@ -60,4 +60,4 @@ the env var is set (CI mode).
 2. Add one or more C++ input files (`.h`, `.cpp`).
 3. Write `expected.yaml` with `must_fire`, `must_not_fire`, and `thresholds`.
 4. Write `notes.md` explaining each defect and the pass criterion.
-5. Run `python eval/eval.py --case cases/<NN-name>` to verify.
+5. Run `python cpp/eval/eval.py --case cases/<NN-name>` to verify.

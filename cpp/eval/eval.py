@@ -5,9 +5,9 @@ Loads the cpp-review skill and reference files, calls the Claude API with each
 test case, scores findings against the YAML oracle, and records token usage.
 
 Usage:
-    python eval/eval.py --case all --model claude-sonnet-4-6
-    python eval/eval.py --case cases/00-comprehensive --model claude-sonnet-4-6
-    python eval/eval.py --case all --model claude-sonnet-4-6 --runs 3
+    python cpp/eval/eval.py --case all --model claude-sonnet-4-6
+    python cpp/eval/eval.py --case cases/00-comprehensive --model claude-sonnet-4-6
+    python cpp/eval/eval.py --case all --model claude-sonnet-4-6 --runs 3
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import yaml
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 SKILL_ROOT = REPO_ROOT / "cpp-review"
 REFS_DIR = REPO_ROOT / "cpp" / "references"
 SELF_TEST_DIR = SKILL_ROOT / "self-test"

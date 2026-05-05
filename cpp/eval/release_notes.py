@@ -5,11 +5,11 @@ Reads the current and previous run-log rows, computes token and cost deltas,
 and outputs markdown to stdout + GitHub Actions GITHUB_OUTPUT.
 
 Usage (local):
-    python eval/release_notes.py --prev-tag v0.1.0 --model claude-sonnet-4-6
+    python cpp/eval/release_notes.py --prev-tag v0.1.0 --model claude-sonnet-4-6
 
 Usage (CI -- called by self-test.yml release job):
     PREV=$(git describe --abbrev=0 HEAD~1 2>/dev/null || echo "")
-    python eval/release_notes.py --prev-tag "$PREV" --model claude-sonnet-4-6
+    python cpp/eval/release_notes.py --prev-tag "$PREV" --model claude-sonnet-4-6
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).parent.parent.parent
 RUN_LOG = REPO_ROOT / "cpp-review" / "self-test" / "results" / "run-log.md"
 
 

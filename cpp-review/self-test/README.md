@@ -20,17 +20,17 @@ See each case's `notes.md` for the defect map and pass criteria.
 
 ```sh
 # From repo root
-pip install -r eval/requirements.txt
+pip install -r cpp/eval/requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...
 
 # All cases, single pass
-python eval/eval.py --case all --model claude-sonnet-4-6
+python cpp/eval/eval.py --case all --model claude-sonnet-4-6
 
 # Single case
-python eval/eval.py --case cases/00-comprehensive --model claude-sonnet-4-6
+python cpp/eval/eval.py --case cases/00-comprehensive --model claude-sonnet-4-6
 
 # Consistency measurement (3 passes per case)
-python eval/eval.py --case all --model claude-sonnet-4-6 --runs 3
+python cpp/eval/eval.py --case all --model claude-sonnet-4-6 --runs 3
 ```
 
 Results are written to `results/run-log.md` (committed) and

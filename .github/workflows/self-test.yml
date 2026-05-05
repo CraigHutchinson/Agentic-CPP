@@ -17,10 +17,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r eval/requirements.txt
+        run: pip install -r cpp/eval/requirements.txt
 
       - name: Run self-test
-        run: python eval/eval.py --case all --model claude-sonnet-4-6
+        run: python cpp/eval/eval.py --case all --model claude-sonnet-4-6
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
@@ -46,7 +46,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r eval/requirements.txt
+        run: pip install -r cpp/eval/requirements.txt
 
       - uses: actions/download-artifact@v4
         with:
@@ -59,7 +59,7 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           PREV=$(git describe --abbrev=0 HEAD~1 2>/dev/null || echo "")
-          python eval/release_notes.py --prev-tag "$PREV" --model claude-sonnet-4-6
+          python cpp/eval/release_notes.py --prev-tag "$PREV" --model claude-sonnet-4-6
 
       - name: Create GitHub release
         env:
