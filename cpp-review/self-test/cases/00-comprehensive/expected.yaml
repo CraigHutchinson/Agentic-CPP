@@ -1,0 +1,78 @@
+must_fire:
+  - id: E1
+    tier: SHOULD
+    signal: "Missing class docblock on TokenDispatcher (stranger Q1)"
+    keywords: ["TokenDispatcher", "docblock", "doc comment", "documentation", "DOC-COMMENT", "class comment"]
+    match: any_2
+
+  - id: E2
+    tier: SHOULD
+    signal: "Raw pointer m_Queue with no ownership annotation (stranger Q5)"
+    keywords: ["m_Queue", "ownership", "owning", "non-owning", "raw pointer", "annotation"]
+    match: any_2
+
+  - id: E3
+    tier: SHOULD
+    signal: "Boolean selector params async and validate on Dispatch (L2)"
+    keywords: ["async", "validate", "bool", "boolean", "selector", "options struct"]
+    match: any_2
+
+  - id: E4
+    tier: SHOULD
+    signal: "std::pair<bool, Token> return on TryDequeue (L2)"
+    keywords: ["pair", "TryDequeue", "named struct", "optional", "std::optional"]
+    match: any_2
+
+  - id: E5
+    tier: SHOULD
+    signal: "Missing [[nodiscard]] on IsEmpty() (L3)"
+    keywords: ["nodiscard", "IsEmpty", "observer", "[[nodiscard]]"]
+    match: any_2
+
+  - id: E6
+    tier: SHOULD
+    signal: "Unscoped enum DispatchMode -- use enum class (L3)"
+    keywords: ["DispatchMode", "unscoped", "enum class", "scoped enum"]
+    match: any_2
+
+  - id: E7
+    tier: SHOULD
+    signal: "typedef TokenList -- use 'using' alias (L3)"
+    keywords: ["TokenList", "typedef", "using"]
+    match: any_2
+
+  - id: E8
+    tier: MUST
+    signal: "C-style cast (Token*)&t (L3)"
+    keywords: ["cast", "static_cast", "C-cast", "C-style cast", "(Token*)"]
+    match: any_1
+
+  - id: E9
+    tier: SHOULD
+    signal: "Index-based loop replaceable with range-for (L3)"
+    keywords: ["range-for", "range for", "index", "indexed loop", "for (int i"]
+    match: any_2
+
+  - id: E10
+    tier: MUST
+    signal: "CompareIgnoreCase reinvents existing project utility (reinvention)"
+    keywords: ["CompareIgnoreCase", "reinvention", "utility", "case-insensitive", "duplicate", "existing"]
+    match: any_2
+
+  - id: E11
+    tier: MUST
+    signal: "s_Queue file-static with ENABLE_UNIT_TESTS_WITH_FAKES bypass (testability)"
+    keywords: ["ENABLE_UNIT_TESTS_WITH_FAKES", "bypass", "testability", "s_Queue", "static", "test bypass"]
+    match: any_2
+
+must_not_fire:
+  - signal: "Null guard at every caller of GetQueue()"
+    keywords: ["null", "GetQueue", "caller", "nullptr", "null check", "guard"]
+    match: any_2
+    notes: >
+      GetQueue() returns *s_Queue -- the null-dereference risk belongs at the
+      initialization site, not at every consumer. Input-source check suppresses this.
+
+thresholds:
+  min_recall: 0.80
+  max_noise_ratio: 0.40

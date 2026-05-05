@@ -1,0 +1,12 @@
+must_fire:
+  - id: E1
+    tier: SHOULD
+    signal: "L0 dead code: ContextCache has zero production callers in this commit"
+    keywords: ["ContextCache", "dead code", "caller", "production", "zero", "L0", "no caller", "wired"]
+    match: any_2
+
+must_not_fire: []
+
+thresholds:
+  min_recall: 1.0
+  max_noise_ratio: 0.60

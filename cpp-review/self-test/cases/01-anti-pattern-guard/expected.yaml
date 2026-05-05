@@ -1,0 +1,17 @@
+must_fire: []
+
+must_not_fire:
+  - signal: "Null guard on kMappings or cmd at the FindCommand call site"
+    keywords: ["null", "kMappings", "guard", "nullptr", "mappings", "cmd"]
+    match: any_2
+    notes: >
+      The call site (DispatchCommand) constructs both arguments inline:
+      kMappings is a static const array (cannot be null) and cmd is passed
+      directly from the caller. The API contract says "may be null" but the
+      call site cannot trigger that path. The input-source check must suppress
+      the null-guard finding. The reviewer should mention the suppression
+      in "Findings deliberately not raised".
+
+thresholds:
+  min_recall: 1.0   # vacuously true -- no must-fire entries
+  max_noise_ratio: 0.50

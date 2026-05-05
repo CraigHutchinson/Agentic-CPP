@@ -1,0 +1,72 @@
+name: self-test
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r eval/requirements.txt
+
+      - name: Run self-test
+        run: python eval/eval.py --case all --model claude-sonnet-4-6
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: cpp-review/self-test/results/*.output.json
+
+  release:
+    needs: [test]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed for git describe
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r eval/requirements.txt
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: eval-results
+          path: cpp-review/self-test/results/
+
+      - name: Build release notes
+        id: notes
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          PREV=$(git describe --abbrev=0 HEAD~1 2>/dev/null || echo "")
+          python eval/release_notes.py --prev-tag "$PREV" --model claude-sonnet-4-6
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --notes "${{ steps.notes.outputs.body }}" \
+            cpp-review/self-test/results/*.output.json 2>/dev/null || \
+          gh release create "${{ github.ref_name }}" \
+            --notes "${{ steps.notes.outputs.body }}"

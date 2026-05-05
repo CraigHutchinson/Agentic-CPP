@@ -140,6 +140,31 @@ cpp-simplify             ← apply Rewrite Brief
 
 ---
 
+## Self-test suite
+
+`cpp-review/self-test/` contains C++ snippets with deliberate defects and YAML oracle
+files naming which findings must and must not fire. The evaluation harness in `eval/`
+calls the Claude API, scores each run, and records token usage.
+
+| Case | Checks exercised | Must-fire |
+| --- | --- | --- |
+| `00-comprehensive` | Stranger Q1/Q5; L2 API smells; L3 modernisation; reinvention; testability bypass | 11 |
+| `01-anti-pattern-guard` | Input-source suppression (must-not-fire) | 0 |
+| `02-l0-dead-code` | L0 production-caller audit | 1 |
+
+```sh
+pip install -r eval/requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...
+python eval/eval.py --case all --model claude-sonnet-4-6
+```
+
+Release tags (`v*`) are gated on ≥ 80% recall via GitHub Actions. Token usage and
+delta vs. the previous release are embedded in each release's notes.
+
+Full history: [`cpp-review/self-test/results/run-log.md`](cpp-review/self-test/results/run-log.md)
+
+---
+
 ## Contributing
 
 The `cpp/references/` files are the shared knowledge base. Improvements to any of them benefit all four skills simultaneously and should be pushed back to this repo so the whole team gets the update.
