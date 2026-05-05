@@ -4,10 +4,6 @@ description: Senior C++ reviewer persona. Two modes -- (1) CODE REVIEW: invoke a
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
-# C++ Review
-
-Read-only reviewer persona for substantive C++ changes. Operates against a diff or a focused source surface. Produces a numbered findings list with severities; never edits files.
-
 ## When to invoke
 
 Invoke proactively when the change being reviewed includes any of:
@@ -34,25 +30,6 @@ When a finding depends on a design choice that the loaded references do not cove
 **MUST findings require a directive.** Never raise a MUST finding based on reviewer preference alone. A MUST that survives a five-minute conversation with the author must be able to cite: a loaded reference rule, a named AGENTS.md / CLAUDE.md clause, or an explicit project standard. If the only justification is "I think this is cleaner", downgrade to SHOULD or drop.
 
 **Vigilance on silent assumptions.** The most common failure mode is assuming the modern form (e.g. `std::optional`, project span type, `[[nodiscard]]`) is always preferred. Check the project-specific type overlay and any module-level freeze policy before asserting it.
-
-## Invocation
-
-The skill's `allowed-tools` frontmatter restricts the persona to read-only operations (`Read`, `Glob`, `Grep`, `Bash` for git diff inspection). To run as a separate subagent with its own context window:
-
-Skill path varies by install location: `~/.cursor/skills/cpp-review/SKILL.md` (user/global) or `<repo-root>/.cursor/skills/cpp-review/SKILL.md` (project). Substitute accordingly.
-
-```text
-Task(
-  subagent_type = "generalPurpose",
-  readonly = false,
-  description = "C++ architect review of <branch / PR>",
-  prompt = "Read ~/.cursor/skills/cpp-review/SKILL.md and follow it.
-            Review the diff <range>. Design doc: <URL or path>.
-            Tracker: <ticket>. Produce findings list per the format below."
-)
-```
-
-For a stacked PR chain, name the diff range as `<base>..<head SHA>` and link the design doc with a stable anchor.
 
 ## Stranger-reviewer question pass
 
@@ -165,28 +142,6 @@ N. [SEVERITY / L0-PLAN] Plan §"<section heading>": "<quoted claim>" -- <one-lin
 
 Skip PRE-EXISTING entirely in plan review.
 
-### Plan review invocation
-
-```text
-Task(
-  subagent_type = "generalPurpose",
-  readonly = false,
-  description = "C++ plan review: <plan title>",
-  prompt = "Read ~/.cursor/skills/cpp-review/SKILL.md and follow it.
-
-PLAN REVIEW MODE. Apply L0, L1, and L2 only. Skip L3 and PRE-EXISTING.
-Input plan: <path to plan file, or paste content below>.
-Produce a plan findings list per the Plan findings format section.
-If one or more L0 or L1 MUST findings fire, append a Revised Plan block
-per the Revised Plan format section.
-
-Plan:
----
-<plan content>
----"
-)
-```
-
 ## Pre-finding context load
 
 Before producing any finding, the reviewer **must** load enough context to make accurate calls. Skipping this step is the dominant cause of false positives in AI code review.
@@ -206,7 +161,16 @@ Before producing any finding, the reviewer **must** load enough context to make 
 7. **Check for reinvention.** Before accepting any new helper as novel, grep against the **Reinvention catalogue** in `../cpp/references/cpp-idioms.md`. Finding is **MUST** when the new code duplicates an existing utility's behaviour; **SHOULD** when it sits beside but doesn't use the correct utility.
 8. **Check for code-location and file organisation.** Ask: "If a teammate searched for this functionality six months from now, where would they look?" If the answer is "not where it lives now", raise a SHOULD finding suggesting the better home (e.g. a string helper added inside a feature module that belongs in the project's utilities directory; a generic argv parser added inside a domain-specific file that belongs in the shared utilities layer). In the same pass, apply the **File organisation** rules in `../cpp/references/cpp-idioms.md > File organisation`: filename/class-name consistency, extension convention (`#pragma once`, `.h`/`.cpp`/`.inl`), what belongs in headers vs `.cpp`, include order, and class member ordering.
 9. **Check for legacy idioms and commenting.** Load `../cpp/references/cpp-modernisation.md` and apply its tier tables to all new and touched code. Apply **after** step 7 so project utilities (reinvention catalogue) take precedence over generic modernisation. In parallel, load `../cpp/references/cpp-commenting.md` and apply its MUST/SHOULD table to every new or changed class, struct, and function declaration.
-10. **Check for global state that hurts testability.** Look for `s_*` / `g_*` file-statics, function-local statics owning cached state, and ad-hoc singletons. The dominant tell is a test-build conditional bypass (e.g., `#if ENABLE_UNIT_TESTS_WITH_FAKES` or equivalent) -- it is the author's admission the design is testability-hostile. Raise **MUST** when the bypass exists; **SHOULD** when no bypass exists yet but adding alternative test configurations would force one. Remediation: derive from the project's `Singleton<T>` utility or equivalent CRTP singleton pattern. See `../cpp/references/cpp-modernisation.md > Globals, singletons, and testability seam` for the full pattern and worked example.
+10. **API-contract findings -- input-source check.** Before raising a finding that says "guard call site Y against API behaviour X (NULL element, exception, edge case, wider-domain return value) that the API contract documents", first ask: **can Y actually trigger X?**
+
+    - If Y constructs the input to the API in-place (a `static const Foo[]` literal a few lines above the call site, a default-constructed value, a parameter the same function just validated), then Y cannot trigger X. The defensive code the finding proposes pretends to enforce something Y itself cannot violate, and adding it inverts the API contract: if every consumer must defend, the API isn't really enforcing the contract -- it is naming the behaviour and forcing every reader of every consumer table to redo the check.
+    - If Y receives the input from outside (a function parameter, plugin, runtime data, macro-expanded table, generated code), then Y *can* trigger X and the guard is real. Raise the finding.
+
+    The principle: API contracts are honoured **once**, in the API. A finding that asks a trusted call site to redundantly enforce a contract the API already enforces -- and that the call site itself authors the inputs to -- is anti-pattern review. Suppress it; if the bot already raised it, reply with the won't-fix rationale and the input-source argument.
+
+    **AI-reviewer-finding caveat.** AI code-review tools routinely raise this class of finding mechanically: "API doc says X is allowed; here is a consumer not handling X." Apply the input-source check before accepting. The existence of an API contract does not impose obligations on consumers whose inputs cannot violate it.
+
+11. **Check for global state that hurts testability.** Look for `s_*` / `g_*` file-statics, function-local statics owning cached state, and ad-hoc singletons. The dominant tell is a test-build conditional bypass (e.g., `#if ENABLE_UNIT_TESTS_WITH_FAKES` or equivalent) -- it is the author's admission the design is testability-hostile. Raise **MUST** when the bypass exists; **SHOULD** when no bypass exists yet but adding alternative test configurations would force one. Remediation: derive from the project's `Singleton<T>` utility or equivalent CRTP singleton pattern. See `../cpp/references/cpp-modernisation.md > Globals, singletons, and testability seam` for the full pattern and worked example.
 
     **Three-path check for testability changes.** When the diff is adding testability to existing code, verify which path was taken -- in preference order:
     - *Additive*: new method/type/overload alongside unchanged existing surface -- generally valid; no existing semantics touched.
@@ -826,33 +790,11 @@ The persona cannot reliably catch:
 
 When the diff includes any of the above, the persona's findings list **must end with a "Hand off to human reviewer" section** naming the categories and the sibling persona / team that should pick them up.
 
-## Learnings loop
-
-Findings the team consistently rejects should feed back into the **anti-pattern guard** in this skill so the persona doesn't repeat them.
-
-Process:
-
-1. After each review pass, the author lists rejected findings with one-line reasons in the PR thread.
-2. Once a rejection pattern repeats across two PRs, append it to the **Anti-pattern guard** section in `../cpp/references/cpp-anti-patterns.md`.
-3. The persona reads `../cpp/references/cpp-anti-patterns.md` before producing findings (loaded on demand by the SKILL.md instruction).
-
-This mirrors CodeRabbit's "learnings" system: the persona becomes more accurate over time without re-tuning the prompt.
-
 ## Model tier guidance
 
 - **Architecture / API / boundary review** (the bulk of this persona's work): use the highest-tier model available. Findings here have leverage; cost amortises over the PR's lifetime.
 - **Style / wording-only pass**: a smaller model is fine. Invoke the persona with `model: composer-2-fast` (or equivalent) when the diff is wording-only.
 - Match the model to the question, not the persona.
-
-## Applying findings
-
-Treat the output as a discussion, not a checklist:
-
-1. Apply MUST items unless you can write a one-line rebuttal in the PR thread.
-2. Triage SHOULD items -- accept, defer with a TODO referencing a ticket, or reject in writing.
-3. Treat NICE items as future-PR fodder; cherry-pick the ones that align with current work.
-4. Add PRE-EXISTING items to the team's tech-debt backlog if they aren't already tracked.
-5. Update `../cpp/references/cpp-anti-patterns.md` if any findings get rejected for reasons that would generalise.
 
 ## Iterative review mode
 
@@ -909,12 +851,12 @@ The rule is **traceability over linearity**. Once a PR has reviewer comments (hu
 | Stage of the PR | Where the fix goes | Why |
 |---|---|---|
 | Pre-publish (branch exists locally or is pushed but has no reviewer comments yet) | Fold into the originating commit via `--fixup` + `--autosquash` | No review signal exists yet; clean per-commit history serves the eventual reviewer better than a noisy fix-on-fix chain |
-| Post-comment (any reviewer -- human, u-pr bot, CodeRabbit, etc. -- has left a comment that the fix addresses) | New commit on top of the chain, with a subject that names the area + change and a body that cites the review | Traceability: a future reviewer can see what changed in response to the comment without diffing the whole PR; the comment-to-fix mapping survives the merge |
+| Post-comment (any reviewer -- human or AI -- has left a comment that the fix addresses) | New commit on top of the chain, with a subject that names the area + change and a body that cites the review | Traceability: a future reviewer can see what changed in response to the comment without diffing the whole PR; the comment-to-fix mapping survives the merge |
 | Pre-existing finding the author discovered themselves while iterating, no reviewer involvement | Fold into the originating commit | Same rationale as pre-publish |
 
 For post-comment fixes, the new commit's message should:
 - Subject: name the area and the concrete change (e.g. `Editor/Application: skip NULL token rows when formatting -overrideTextureCompression accepted values`).
-- Body: a one- to three-line description of *what* changed and *why*, ending with a citation to the review (e.g. `Caught by u-pr review on PR-105000.` or `Addresses review comment from @reviewer at <permalink>.`). The citation is what makes the commit traceable; it is not optional.
+- Body: a one- to three-line description of *what* changed and *why*, ending with a citation to the review (e.g. `Caught by AI code review on PR-105000.` or `Addresses review comment from @reviewer at <permalink>.`). The citation is what makes the commit traceable; it is not optional.
 
 For pre-publish folds:
 - Use `git tag <topic>-pre-<change-name>` before any reset / amend / rebase so the pre-rewrite state is recoverable.
