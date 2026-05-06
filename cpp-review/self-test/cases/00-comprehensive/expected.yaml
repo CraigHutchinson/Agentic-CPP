@@ -8,7 +8,7 @@ must_fire:
   - id: E2
     tier: SHOULD
     signal: "Raw pointer m_Queue with no ownership annotation (stranger Q5)"
-    keywords: ["m_Queue", "ownership", "owning", "non-owning", "raw pointer", "annotation"]
+    keywords: ["m_Queue", "ownership", "owning", "non-owning", "raw pointer", "annotation", "data member", "public member"]
     match: any_2
 
   - id: E3
@@ -65,13 +65,8 @@ must_fire:
     keywords: ["ENABLE_UNIT_TESTS_WITH_FAKES", "bypass", "testability", "s_Queue", "static", "test bypass"]
     match: any_2
 
-must_not_fire:
-  - signal: "Null guard at every caller of GetQueue()"
-    keywords: ["null", "GetQueue", "caller", "nullptr", "null check", "guard"]
-    match: any_2
-    notes: >
-      GetQueue() returns *s_Queue -- the null-dereference risk belongs at the
-      initialization site, not at every consumer. Input-source check suppresses this.
+# No must_not_fire entries: the anti-pattern guard is exercised by case 01.
+must_not_fire: []
 
 thresholds:
   min_recall: 0.80

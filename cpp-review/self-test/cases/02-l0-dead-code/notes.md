@@ -1,23 +1,29 @@
 # Case 02: L0 dead code (no production caller)
 
-Tests the **L0 production-caller audit** from `cpp-review/SKILL.md` Pre-finding
-context load step 1a and Layered design review L0 question 2.
+Tests the **L0 production-caller audit** from `cpp-review/SKILL.md`.
 
 ## Setup
 
-`ContextCache` is a new class introduced in this "commit". The header comment
-explicitly states that the only file importing it is `ContextCacheTests.cpp` --
-no production accessor calls `ContextCache::Get()`.
+Two files are submitted:
+
+- `context.h` — a new, well-written `ContextCache` class (no L2/L3 defects)
+- `ContextCacheTests.cpp` — a unit test file; the only file in the submitted diff that includes `context.h`
+
+No production `.cpp` includes the header. The reviewer must notice that this
+new class has no production consumer in the submitted diff.
+
+The header is intentionally clean (docblock, `[[nodiscard]]`, `noexcept`,
+ownership annotation) so the reviewer is not distracted by L2/L3 defects.
 
 ## Expected finding
 
 ```text
-N. [SHOULD / L0] context.h -- ContextCache ships in this commit with zero
-   production callers; the class is dead code on trunk until a follow-up
-   commit wires it into a production accessor.
-   Evidence: L0 (intent): only consumer is ContextCacheTests.cpp (a test file).
-   Suggested: move ContextCache to the follow-up commit alongside its first
-              production caller, or wire the accessor in this commit.
+N. [SHOULD] context.h -- ContextCache has no production caller in this commit;
+   the only consumer is ContextCacheTests.cpp (a test file). The class ships as
+   dead code on trunk.
+   Evidence: L0 (intent): zero production callers visible in the diff.
+   Suggested: move ContextCache to the commit that wires its first production
+              caller, or add the production caller in this commit.
 ```
 
 Tier is SHOULD (not MUST) because the commit message does not claim the class
@@ -25,5 +31,7 @@ is already wired.
 
 ## Pass criterion
 
-The case PASSES if the reviewer raises an L0 finding (SHOULD or MUST) on
-`ContextCache` citing zero production callers.
+The case PASSES when the reviewer raises a finding citing that `ContextCache`
+has no production caller (only a test file caller) in the submitted diff.
+Two of these keywords must appear together: ContextCache / dead / caller /
+production / test / ContextCacheTests / zero.

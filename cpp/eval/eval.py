@@ -79,11 +79,21 @@ def load_oracle(case_dir: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 def extract_findings(response_text: str) -> list[dict]:
-    """Extract structured findings from a review response."""
+    """Extract structured findings from a review response.
+
+    The skill emits findings in one of several markdown formats depending on
+    model version and temperature:
+      **1.** [MUST] body...          (bold number, plain tier)
+      1. **[MUST]** body...          (plain number, bold tier)
+      **1.** `[MUST]` body...        (bold number, backtick tier)
+      1. `[MUST]` body...            (plain number, backtick tier)
+      1. [MUST] body...              (plain, no decoration)
+    Also handles compound tiers: [MUST / L0-ESCALATION-STOP].
+    """
     findings = []
-    # Matches: "1. [MUST] ..." or "1. [MUST / L0-ESCALATION-STOP] ..."
+    # [`*] matches either a backtick or an asterisk (decoration characters).
     pattern = re.compile(
-        r"^\d+\.\s+\[(?P<tier>[A-Z][A-Z\s/\-]*)\]\s+(?P<body>.+)$",
+        r"^\*{0,2}\d+\.\*{0,2}\s+[`*]{0,2}\[(?P<tier>[A-Z][A-Z0-9\s/\-]*)\][`*]{0,2}\s+(?P<body>.+)$",
         re.MULTILINE,
     )
     for m in pattern.finditer(response_text):
@@ -164,7 +174,7 @@ def run_case(case_dir: Path, system_prompt: str, model: str,
 
     response = client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         system=system_prompt,
         messages=[{"role": "user", "content": user_message}],
     )
@@ -242,9 +252,12 @@ def append_run_log(result: dict) -> None:
 def save_output(result: dict) -> Path:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     ts = result["timestamp"][:19].replace(":", "-")
-    out_path = RESULTS_DIR / f"{ts}-{result['case']}.output.json"
+    stem = f"{ts}-{result['case']}"
+    out_path = RESULTS_DIR / f"{stem}.output.json"
     summary = {k: v for k, v in result.items() if k != "response"}
     out_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    response_path = RESULTS_DIR / f"{stem}.response.txt"
+    response_path.write_text(result.get("response", ""), encoding="utf-8")
     return out_path
 
 

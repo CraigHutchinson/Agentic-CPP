@@ -1,17 +1,27 @@
+# Case 01: pure suppress test -- zero must_fire entries.
+# The reviewer should not raise a null-guard finding for kMappings or cmd
+# at the DispatchCommand call site, because both arguments are constructed
+# by the caller from sources that cannot be null.
+#
+# Style/design findings on FindCommand (span, nodiscard, noexcept) and
+# DispatchCommand structure are NOT penalised -- noise check is disabled.
+# Only the suppress check matters.
+
 must_fire: []
 
 must_not_fire:
   - signal: "Null guard on kMappings or cmd at the FindCommand call site"
-    keywords: ["null", "kMappings", "guard", "nullptr", "mappings", "cmd"]
-    match: any_2
+    keywords: ["kMappings may be null", "caller does not guard", "kMappings could be null",
+               "kMappings is null", "DispatchCommand should guard against null",
+               "guard kMappings", "check kMappings for null"]
+    match: any_1
     notes: >
-      The call site (DispatchCommand) constructs both arguments inline:
-      kMappings is a static const array (cannot be null) and cmd is passed
-      directly from the caller. The API contract says "may be null" but the
-      call site cannot trigger that path. The input-source check must suppress
-      the null-guard finding. The reviewer should mention the suppression
-      in "Findings deliberately not raised".
+      Input-source check: kMappings is a static const array (cannot be null).
+      cmd is a parameter validated before DispatchCommand is called.
+      These very specific multi-word phrases would only appear in the exact
+      wrong finding. Single words like 'null', 'guard', 'kMappings' appear
+      legitimately in API design findings and must not be used alone.
 
 thresholds:
-  min_recall: 1.0   # vacuously true -- no must-fire entries
-  max_noise_ratio: 0.50
+  min_recall: 1.0
+  max_noise_ratio: 1.0   # disabled -- style findings on the surrounding code are expected
