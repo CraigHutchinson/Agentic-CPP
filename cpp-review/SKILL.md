@@ -148,7 +148,17 @@ Before producing any finding, the reviewer **must** load enough context to make 
 
 **Apply the [Layered design review](#layered-design-review) framework first.** Run L0 (intent) before L1, L1 before L2, L2 before L3. If a MUST fires at any layer, tag it with the appropriate escalation tag and defer lower-layer findings for that surface.
 
-1. **Read the diff in full**, not just the changed hunks. Use `git diff <range>` and look at the surrounding 50 lines per hunk to understand the surrounding contract.
+0. **Resolve the diff base before touching the diff.** Findings produced against the wrong base are the single largest source of spurious "MUST" findings in AI code review -- the reviewer reports changes the PR did not introduce because the local base ref drifted behind the published one. Before any other step:
+
+   - **Identify the branch's *published* base.** For a PR, this is the PR's `baseRefName` -- read it via `gh pr view <num> --json baseRefName,headRefName,headRefOid`. For a local branch with no PR yet, ask the user; do not guess. Never assume `origin/trunk` / `origin/main`: stacked PRs frequently base on another feature branch.
+   - **Fetch the base before resolving its SHA.** `git fetch origin <baseRefName>` first. A local branch ref of the same name will silently sit behind `origin/<baseRefName>` if the upstream was updated -- this is the failure mode. Always resolve through `origin/<baseRefName>`, never the bare local ref.
+   - **Use the three-dot range that mirrors GitHub's PR view.** `git diff origin/<base>...<head>` -- three dots, not two. Three-dot diffs are based at `merge-base(<base>, <head>)`, which is exactly what GitHub renders in the *Files changed* tab; two-dot diffs include base-side changes the head branch hasn't pulled and pollute the review with unrelated upstream commits.
+   - **Print the resolved SHA pair** at the top of the review report: `Diff base: <base> @ <SHA12> ... <head> @ <SHA12> (merge-base <SHA12>)`. This makes the base auditable and lets the author catch a mismatch before reading findings.
+   - **Sanity-check the merge-base age.** If `git log --oneline <merge-base>..origin/<base>` shows commits, the head branch is behind the base; the diff still rebuilds correctly with three-dot, but call this out in the report so the author rebases before merging.
+
+   The failing pattern this rule prevents: reviewing `git diff <local-base-ref>..HEAD` where the local base ref is a stale copy of the published branch. Findings against upstream-base commits the head branch hasn't pulled yet appear as if the head branch introduced them. They are spurious; the GitHub diff (which uses the live `origin/<base>` tip via three-dot semantics) does not show them. See `Example 9 -- Stale-base spurious findings`.
+
+1. **Read the diff in full**, not just the changed hunks. Use `git diff origin/<base>...<head>` (three-dot, base resolved per step 0) and look at the surrounding 50 lines per hunk to understand the surrounding contract.
 1a. **L0 check — production consumer audit.** For every new file, class, and non-trivial free function introduced by the diff: grep the codebase for its name and count *production* callers (exclude the new type's own test file). A new artifact with zero production callers in this commit is dead code on trunk -- raise as L0 SHOULD (or MUST if the commit message claims it is wired). Record the result before proceeding to L1.
 2. **Identify call sites of new / changed public APIs.** `Grep` the codebase for the new symbol; if it has callers in the same chain, read at least one site to understand intent.
 3. **Read the design / spec doc** referenced by the PR description or commit messages. Map each MUST finding to a specific design anchor or stated invariant.
@@ -160,7 +170,7 @@ Before producing any finding, the reviewer **must** load enough context to make 
    - Check for a module `.clang-tidy`. Skip raising findings for checks it already enforces mechanically -- CI catches those without a review comment.
 7. **Check for reinvention.** Before accepting any new helper as novel, grep against the **Reinvention catalogue** in `../cpp/references/cpp-idioms.md`. Finding is **MUST** when the new code duplicates an existing utility's behaviour; **SHOULD** when it sits beside but doesn't use the correct utility.
 8. **Check for code-location and file organisation.** Ask: "If a teammate searched for this functionality six months from now, where would they look?" If the answer is "not where it lives now", raise a SHOULD finding suggesting the better home (e.g. a string helper added inside a feature module that belongs in the project's utilities directory; a generic argv parser added inside a domain-specific file that belongs in the shared utilities layer). In the same pass, apply the **File organisation** rules in `../cpp/references/cpp-idioms.md > File organisation`: filename/class-name consistency, extension convention (`#pragma once`, `.h`/`.cpp`/`.inl`), what belongs in headers vs `.cpp`, include order, and class member ordering.
-9. **Check for legacy idioms and commenting.** Load `../cpp/references/cpp-modernisation.md` and apply its tier tables to all new and touched code. Apply **after** step 7 so project utilities (reinvention catalogue) take precedence over generic modernisation. In parallel, load `../cpp/references/cpp-commenting.md` and apply its MUST/SHOULD table to every new or changed class, struct, and function declaration.
+9. **Check for legacy idioms and commenting.** Load `../cpp/references/cpp-modernisation.md` and apply its tier tables to all new and touched code. Apply **after** step 7 so project utilities (reinvention catalogue) take precedence over generic modernisation. In parallel, load `../cpp/references/cpp-commenting.md` and apply its MUST/SHOULD table to every new or changed class, struct, and function declaration **and to all comment blocks within changed function bodies**. For inline body comments, apply the verbose-comment heuristic (the SHOULD rule on blocks exceeding ~8 non-blank lines): flag as SHOULD when sentences describe what the code does rather than why, explain well-known standard library behaviour, or repeat a point already made in the same block. See `cpp-commenting.md > Example E` for the worked example and trimming pattern.
 10. **API-contract findings -- input-source check.** Before raising a finding that says "guard call site Y against API behaviour X (NULL element, exception, edge case, wider-domain return value) that the API contract documents", first ask: **can Y actually trigger X?**
 
     - If Y constructs the input to the API in-place (a `static const Foo[]` literal a few lines above the call site, a default-constructed value, a parameter the same function just validated), then Y cannot trigger X. The defensive code the finding proposes pretends to enforce something Y itself cannot violate, and adding it inverts the API contract: if every consumer must defend, the API isn't really enforcing the contract -- it is naming the behaviour and forcing every reader of every consumer table to redo the check.
@@ -170,7 +180,9 @@ Before producing any finding, the reviewer **must** load enough context to make 
 
     **AI-reviewer-finding caveat.** AI code-review tools routinely raise this class of finding mechanically: "API doc says X is allowed; here is a consumer not handling X." Apply the input-source check before accepting. The existence of an API contract does not impose obligations on consumers whose inputs cannot violate it.
 
-11. **Check for global state that hurts testability.** Look for `s_*` / `g_*` file-statics, function-local statics owning cached state, and ad-hoc singletons. The dominant tell is a test-build conditional bypass (e.g., `#if ENABLE_UNIT_TESTS_WITH_FAKES` or equivalent) -- it is the author's admission the design is testability-hostile. Raise **MUST** when the bypass exists; **SHOULD** when no bypass exists yet but adding alternative test configurations would force one. Remediation: derive from the project's `Singleton<T>` utility or equivalent CRTP singleton pattern. See `../cpp/references/cpp-modernisation.md > Globals, singletons, and testability seam` for the full pattern and worked example.
+11. **Check for debug-only work in release builds.** Scan for loops, recursions, or O(n) searches whose only purpose is to feed an `Assert` (or any macro that strips its expression in release — `AssertMsg`, `DebugAssert`, etc.). The tell is a `for` or `while` loop immediately before or wrapping an `Assert` where the loop body contains no statements that survive the release build. The loop runs as dead work in every release binary. Fix: move the computation inside the Assert expression itself — a named helper function called only as `Assert(helper() == expected)` is the most readable form, because the compiler eliminates the call in release when the Assert strips. Raise as **SHOULD** when the dead work is O(n) over an unbounded collection; **NICE** when it is provably short or bounded. This pattern is distinct from a loop that does real release work AND also asserts on its result (e.g. a traversal that both finds a predecessor pointer for unlinking AND asserts membership) — those loops are not findings.
+
+12. **Check for global state that hurts testability.** Look for `s_*` / `g_*` file-statics, function-local statics owning cached state, and ad-hoc singletons. The dominant tell is a test-build conditional bypass (e.g., `#if ENABLE_UNIT_TESTS_WITH_FAKES` or equivalent) -- it is the author's admission the design is testability-hostile. Raise **MUST** when the bypass exists; **SHOULD** when no bypass exists yet but adding alternative test configurations would force one. Remediation: derive from the project's `Singleton<T>` utility or equivalent CRTP singleton pattern. See `../cpp/references/cpp-modernisation.md > Globals, singletons, and testability seam` for the full pattern and worked example.
 
     **Three-path check for testability changes.** When the diff is adding testability to existing code, verify which path was taken -- in preference order:
     - *Additive*: new method/type/overload alongside unchanged existing surface -- generally valid; no existing semantics touched.
@@ -642,6 +654,59 @@ The follow-up plan section clearly names what ships later and why the split
 is correct (provider arrives with its first production consumer).
 ```
 
+### Example 9 -- Stale-base spurious findings (diff base hygiene)
+
+The PR is `feature/x` based on `track1/groundwork`. The reviewer ran
+`git diff track1/groundwork..HEAD` against the **local** `track1/groundwork`
+ref without fetching, and produced two MUST findings:
+
+```text
+2. [MUST / L0] Modules/.../BootConfigData.cpp -- the diff deletes the
+   TrimBlanks helper and its five argv-trimming tests, changing how
+   `Parameter<const char*>` stores values from boot.config vs argv.
+   This is an undocumented behavioural change.
+
+7. [SHOULD / L2] Modules/.../BootConfigData.cpp -- removes
+   `static_cast<int>` from the MultiByteToWideChar length expressions,
+   re-introducing implicit narrowing the codebase suppressed previously.
+```
+
+Both findings are spurious. The author runs `gh pr view 105387 --json
+baseRefName,baseRefOid` and `git fetch origin track1/groundwork`, then
+`git log --oneline 0fafe2a39ccc..origin/track1/groundwork`:
+
+```
+ff513299 BootConfig: fix pre-existing C4267 in fopenPortable/removePortable
+9d6c01c3 BootConfig: move double-append check into Assert via FindInChain helper
+a1737c59 BootConfig: unify argv/file value trimming at store-time
+0e26227f BootConfig: doc hygiene -- Parse @return, verbose comment, prose drift
+```
+
+The TrimBlanks removal (`a1737c59`) and the cast change (`ff513299`) are
+upstream commits on the **base branch** that the local `track1/groundwork`
+ref had not pulled. The PR head branch (`feature/x`) does not introduce
+them. GitHub's PR diff (which uses `merge-base(origin/track1/groundwork,
+feature/x)..feature/x`, three-dot semantics) correctly excludes both. Only
+the local two-dot diff against the stale ref shows them.
+
+**Lesson:** the failure was step 0 in *Pre-finding context load*: the
+reviewer did not fetch the base before resolving the diff range, and used
+two-dot rather than three-dot semantics. Either fix removes the spurious
+findings:
+
+- `git fetch origin track1/groundwork && git diff origin/track1/groundwork..HEAD` (two-dot, fresh ref)
+- `git diff origin/track1/groundwork...HEAD` (three-dot, the GitHub-equivalent shape)
+
+The three-dot form is preferred because it mirrors what reviewers see on
+the PR page and is robust to the head branch lagging behind the base.
+
+**Action when this is detected mid-review:** withdraw every finding whose
+hunk falls inside the upstream base-branch commits (here: findings 2 and
+7). Print the resolved SHA pair at the top of the corrected report so the
+author can verify. Add a "Stale-base correction" line to the
+*Review Retrospective > Iteration log* if the iterative review mode is
+active, naming which findings were withdrawn and why.
+
 ## Rewrite Brief format
 
 Emit this block at the end of the findings report whenever one or more L0 or L1 MUST findings fire. It is consumed verbatim by the `cpp-simplify` executor skill. Write it so a fresh agent with no session context can apply every change without back-reference to the review.
@@ -802,7 +867,7 @@ Activate when the user requests "iterate until clean" or "keep going until no MU
 
 ### Pass loop
 
-1. Run a full review pass per the layered framework (L0 → L3). Emit findings in the standard numbered format, labelled `Pass N`.
+1. Run a full review pass per the layered framework (L0 → L3). Emit findings in the standard numbered format, labelled `Pass N`. **Re-resolve the diff base every pass per *Pre-finding context load* step 0** (`gh pr view ... --json baseRefName,baseRefOid` → `git fetch origin <base>` → three-dot diff). The base often moves between passes (rebase, base-branch updates, force-push); a stale base produces stale findings.
 2. After each pass: apply all MUST findings immediately (the reviewer proposes the fix; the user or the `cpp-simplify` skill applies it). For SHOULD findings, ask which to accept before applying. Record any gap-or-assumption questions from this pass before proceeding.
 3. Re-read the changed surface (not the full diff) for the next pass. Only re-check the hunks that changed plus their callers -- avoid re-raising findings on unchanged code.
 4. Stop when: no MUST findings remain AND either (a) no SHOULD findings remain, or (b) all remaining SHOULDs have been explicitly deferred by the user.
