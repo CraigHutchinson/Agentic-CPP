@@ -49,6 +49,7 @@ The "Migration cost is not a suppression reason" rule from `cpp-anti-patterns.md
 | C-style array as parameter (`modernize-avoid-c-arrays`) | `std::array<T, N>` (fixed) or project span type (variable) | SHOULD |
 | `container.push_back(T(args...))` (`modernize-use-emplace`) | `container.emplace_back(args...)` | NICE -- raise as SHOULD when the temporary holds a non-trivial resource |
 | `s.length() == 0` | `s.empty()` | NICE |
+| `sscanf(value, "%d", &out)` (or `%u` / `%lld` / `%llu`) for parsing one integer literal out of a C-string | `std::from_chars(value, value + std::strlen(value), out)` (`<charconv>`) -- check `result.ec == std::errc{}` for success, `result.ec == std::errc::result_out_of_range` for overflow, and `result.ptr == end` to reject trailing garbage | SHOULD -- `from_chars` is locale-independent (sscanf's `%d` is locale-affected on some platforms), reports overflow explicitly instead of relying on undefined behaviour, is strictly typed against the target (no `long long` widening + cast hop), and rejects partial parses like `"123abc"` that sscanf silently accepts. Combine with `if constexpr (std::is_integral_v<T> && !std::is_same_v<T, bool>)` to unify multiple per-width sscanf specialisations into one templated path that works for *any* integral T (not just the typedefs the original specialisations spelled out). Note behaviour deltas: `from_chars` does not skip leading whitespace and does not accept a `+` prefix on unsigned values; both are usually wins for boot/config/argv parsers. |
 
 ## Loops
 
