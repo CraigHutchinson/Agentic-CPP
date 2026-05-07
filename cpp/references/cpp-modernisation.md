@@ -32,7 +32,7 @@ The "Migration cost is not a suppression reason" rule from `cpp-anti-patterns.md
 | `new T(...)` / `delete` pair owned by raw pointer (`modernize-make-unique`) | `std::unique_ptr<T>` + `std::make_unique<T>(...)`; project equivalent if the touched module has one | MUST when a leak / double-delete path exists; SHOULD otherwise | Core Guidelines R.20, R.23 |
 | `T*` parameter that is conceptually owning (`modernize-pass-by-value` for sinks) | `std::unique_ptr<T>` parameter (sink) or `T&` (non-owning, non-null) | MUST | Core Guidelines I.11 |
 | Manual `try { ... } catch { delete; throw; }` cleanup | RAII wrapper / `std::unique_ptr` / scope guard | MUST | Core Guidelines E.6 |
-| `0` or `NULL` for pointer values (`modernize-use-nullptr`) | `nullptr` | SHOULD | Type-safe; participates correctly in overload resolution |
+| `0` or `NULL` for pointer values (`modernize-use-nullptr`) | `nullptr` | **MUST in new code** -- `NULL` is a `0`-valued macro, not a typed pointer literal; it loses overload resolution against integer 0, allows accidental conversion to integer parameters, and signals legacy code at every call site. Apply MUST to **every line added by the diff**; SHOULD for incidental `NULL` left in surrounding pre-existing code in the same file (sweep into a follow-up if scope allows). | Type-safe; participates correctly in overload resolution |
 | Pointer arithmetic over an array | range-for / project span type (e.g., `std::span<T>` in C++20) | SHOULD | Eliminates off-by-one and bounds bugs |
 | `std::auto_ptr` (`modernize-replace-auto-ptr`) | `std::unique_ptr` | MUST | `auto_ptr` is removed from the standard |
 | Raw-pointer member with an unclear ownership story | `std::unique_ptr` (owning) or non-owning observer comment + `[[nodiscard]]` factory | SHOULD | Caller intent should be type-checked |
@@ -44,7 +44,7 @@ The "Migration cost is not a suppression reason" rule from `cpp-anti-patterns.md
 | Hand-rolled `struct { T* data; size_t size; }` "view" | project span type (e.g., `std::span<T>` in C++20, or `gsl::span<T>`) | MUST when a documented project utility exists; SHOULD otherwise -- forces every consumer into index loops |
 | `const char*` + separate `size_t length` parameter | `std::string_view` parameter by value (consider `&&` overload `= delete` if storing) | SHOULD |
 | Iterator-pair function parameter (`begin, end`) for project containers | project span type / range parameter | SHOULD |
-| Out-parameter `bool f(Result& out)` for "may fail" | `std::optional<Result> f()` or `[[nodiscard]]` enum disposition | SHOULD -- caller can't forget to check the disposition |
+| Out-parameter `bool f(Result& out)` for "may fail" | `std::optional<Result> f()` or `[[nodiscard]]` enum disposition | SHOULD -- caller can't forget to check the disposition; the common consumer pattern collapses to `f(args).value_or(fallback)` instead of "seed `out` with default, call, ignore the bool". Applies even when `Result` is itself a pointer type: `std::optional<T*>` distinguishes "no entry" (`nullopt`) from "entry whose value is null" (engaged optional containing `nullptr`) where bare `T*` cannot. |
 | Multiple out-parameters (`modernize-use-nodiscard`-adjacent) | Return a struct + structured bindings | SHOULD |
 | C-style array as parameter (`modernize-avoid-c-arrays`) | `std::array<T, N>` (fixed) or project span type (variable) | SHOULD |
 | `container.push_back(T(args...))` (`modernize-use-emplace`) | `container.emplace_back(args...)` | NICE -- raise as SHOULD when the temporary holds a non-trivial resource |
@@ -89,6 +89,7 @@ The "Migration cost is not a suppression reason" rule from `cpp-anti-patterns.md
 | Private undefined copy ctor / assignment for non-copyable types (`modernize-use-equals-delete`) | `Foo(const Foo&) = delete;` | SHOULD -- compile-time error rather than link-time |
 | `f(void)` parameter list (`modernize-redundant-void-arg`) | `f()` | NICE |
 | `throw()` exception specification (`modernize-use-noexcept`) | `noexcept` | SHOULD -- `throw()` is deprecated |
+| Two near-duplicate constructors / overloads that differ only in whether they take a "global" dependency or a caller-supplied one (typical "production form" vs "test / isolation form" pair) | One constructor / overload with the dependency parameters defaulted to the global-getter -- e.g. `Foo(Name n, Default d, const Data& data = GetGlobalConfig(), Registry& r = Registry::Global())` | SHOULD -- collapses a duplicated body and removes the artificial "production vs test" framing from the API surface; production callers still write `Foo(n, d)`, tests pass the trailing args. Pre-condition: the global getters must already be declared at the point of default-argument parsing, and they must be cheap and side-effect-free (default-arg expressions are re-evaluated on every construction). |
 
 ## Concurrency
 
@@ -108,7 +109,20 @@ The "Migration cost is not a suppression reason" rule from `cpp-anti-patterns.md
 | `static_assert(cond, "")` with empty message (`modernize-unary-static-assert`) | `static_assert(cond);` | NICE |
 | `#define` constants (`modernize-macro-to-enum` for closed sets) | `constexpr` variable / `inline constexpr` / `enum class` | SHOULD |
 | Macro-based conditional compilation that could be `if constexpr` | `if constexpr` | SHOULD |
+| New trivial accessor / pure helper / small-value getter on a literal type, not marked `constexpr` | Mark `constexpr` (or `constexpr inline` for a free function in a header) | SHOULD -- mandatory review item for every new accessor added by the diff. The reviewer must explicitly note for each new accessor whether `constexpr` was considered and what blocked it. The default answer is "yes, mark it `constexpr`"; valid blockers are: function body cannot be `constexpr` under C++17 (e.g. uses non-`constexpr` machinery, virtual dispatch, runtime allocation), the type is not literal, or the project type overlay (e.g. `core::string_ref` not yet `constexpr`-compatible) prevents it. *"I didn't think about it"* is not a blocker -- raise the SHOULD finding. |
 | `#include <stdio.h>` (`modernize-deprecated-headers`) | `#include <cstdio>` | NICE |
+
+### `constexpr` review pass — what to check
+
+When reviewing a diff that adds new accessors, simple helpers, or value-returning member functions on literal types, run the dedicated `constexpr` pass:
+
+1. **Identify candidates.** Every new free function, member function, or static member returning a value on a literal type.
+2. **Check the body.** Is it expressible under C++17 `constexpr` rules? (No `try`/`catch`, no `goto`, no non-`constexpr` calls, no allocations not made `constexpr` in C++20+.) Trivial accessors (`return m_X;`), arithmetic, and pure compositions of `constexpr` callees all qualify.
+3. **Check the type.** Is the return type a literal type? Project-specific value types (e.g. `core::string_ref` if `constexpr`-compatible at the current project state) qualify; anything that allocates does not.
+4. **Mark or document.** If both checks pass, mark `constexpr`. If either fails, the doc comment (or commit message body) must say which check blocked the marking, so the next reviewer (or the author six months later) does not have to redo the analysis.
+5. **Compile-time test enablement.** Once an accessor is `constexpr`, prefer `static_assert` for any test that pins a value computable at compile time. This is not zero-cost — the static_assert lives in the test TU, not in production — but it surfaces regressions at compile time rather than runtime, and it documents the intent precisely.
+
+The pass is a **mandatory review checklist item** on diffs that add new public accessors. A diff that omits the analysis -- with no commit-message note explaining why -- is a SHOULD finding.
 
 ## Return-value contracts
 
@@ -277,7 +291,20 @@ becomes
 [[nodiscard]] std::optional<ApplicationMode> TryParseToken(const char* s) noexcept;
 ```
 
-Wins: caller cannot forget to check; result and presence travel together; no need to default-initialise `out` at the call site. Tier: **SHOULD**.
+Wins: caller cannot forget to check; result and presence travel together; no need to default-initialise `out` at the call site. Common-case consumer collapses from:
+
+```cpp
+ApplicationMode mode = kDefaultMode;
+TryParseToken(s, mode);                       // bool ignored; out-arg seeded above
+```
+
+to:
+
+```cpp
+ApplicationMode mode = TryParseToken(s).value_or(kDefaultMode);
+```
+
+The pattern survives intact when the success-type is itself a pointer: `std::optional<const char*>` keeps "no entry" (`nullopt`) distinct from "entry with `nullptr` value" (engaged optional holding a null). Identity / passthrough parsers can therefore still report success on a `nullptr` input where that is semantically valid (a string parameter present with no associated value), while a bare `bool TryParse(const char* s, const char*& out)` shape forces the caller to read both the disposition flag *and* the out-argument to recover the same distinction. Tier: **SHOULD**.
 
 ### Example D -- `std::bind` -> lambda
 
