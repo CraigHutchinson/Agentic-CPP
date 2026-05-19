@@ -113,7 +113,7 @@ Answer from the plan text alone. Do not read existing source files for L0.
 
 Ask after L0 passes.
 
-1. **Are proposed file locations correct?** Grep the codebase to verify the proposed directory is the canonical home for this kind of artifact. Raise SHOULD with the correct location if not.
+1. **Are proposed file locations correct?** Grep the codebase to verify the proposed directory is the canonical home for this kind of artifact. Raise SHOULD with the correct location if not. **Apply the Compartmentalisation rule** in *Pre-finding context load* step 8: a proposed subfolder that groups a feature's source + test + registration TU is *not* a YAGNI-flatten finding -- raising "move this back into the flat parent folder" against a compartmentalised layout is an anti-finding even when the subfolder currently holds only one file. The default in plan review is the same as in code review: when a layout could reasonably go either way (flat or subfolder), the subfolder is the structural-review-preferred answer.
 2. **Is the proposed abstraction justified?** Is there more than one named production consumer in the plan, or is this YAGNI? A proposed single-implementation abstract interface with no polymorphic callers planned is SHOULD-collapse. Upgrade to MUST when the indirection adds a hard cost (virtual dispatch on a hot path, extra heap allocation, additional public header dependency).
 3. **Is the proposed ownership model unambiguous?** If a reader of the plan cannot determine who creates, who destroys, and who holds non-owning references for each proposed type, that is a MUST gap.
 4. **Would the proposed structure create module dependency cycles?** Raise as MUST.
@@ -169,8 +169,42 @@ Before producing any finding, the reviewer **must** load enough context to make 
    - Check for a module-specific `AGENTS.md` at the affected module path -- module files frequently carry local conventions that override the repo-root.
    - Check for a module `.clang-tidy`. Skip raising findings for checks it already enforces mechanically -- CI catches those without a review comment.
 7. **Check for reinvention.** Before accepting any new helper as novel, grep against the **Reinvention catalogue** in `../cpp/references/cpp-idioms.md`. Finding is **MUST** when the new code duplicates an existing utility's behaviour; **SHOULD** when it sits beside but doesn't use the correct utility.
+
+   **Iteration-shape sub-check** (frequently-missed reinvention class): when the diff adds a member named `ForEach*`, `Visit*`, `Iterate*`, `Each*`, `Walk*`, or any other bespoke visitor on a *container-shaped* type (registry, list, tree, intrusive chain), ask: would `begin()` / `end()` over a forward / bidirectional / random-access iterator carry the same expressive power and additionally compose with `<algorithm>` (`std::find_if`, `std::any_of`, `std::for_each`), `<ranges>`, range-for, and structured bindings? Almost always yes. Raise as **SHOULD**: prefer iterators + range-for over a callback-only visitor. Iterators are the project's named iteration pattern; bespoke visitors are reinvention. Suppress only when iteration cannot be expressed as a forward iterator (live-mutation walk, multi-axis traversal, lazy on-demand generation that holds non-trivial state). Cite the existing iterator-shape examples in `Modules/NativeKernel/Include/NativeKernel/Core/Containers/` (`vector`, `array_ref`, intrusive list patterns) when raising.
 8. **Check for code-location and file organisation.** Ask: "If a teammate searched for this functionality six months from now, where would they look?" If the answer is "not where it lives now", raise a SHOULD finding suggesting the better home (e.g. a string helper added inside a feature module that belongs in the project's utilities directory; a generic argv parser added inside a domain-specific file that belongs in the shared utilities layer). In the same pass, apply the **File organisation** rules in `../cpp/references/cpp-idioms.md > File organisation`: filename/class-name consistency, extension convention (`#pragma once`, `.h`/`.cpp`/`.inl`), what belongs in headers vs `.cpp`, include order, and class member ordering.
+
+   **Filename / basename consistency rule -- MUST for new files.** A new `<Basename>.h` must locate its primary implementation in `<Basename>.cpp` in the same folder; its test file is `<Basename>Tests.cpp`. Mismatched basename triples (`Editor.h` / `EditorRole.cpp` / `EditorRoleTests.cpp`; `Foo.h` / `FooImpl.cpp`) make every reader who finds a declaration ask "where is the implementation?" and forces them to grep -- defeating the file system as a discovery mechanism. Worked example: Example 5c.
+
+   Apply with judgement at boundaries:
+   - **Legacy / module irregularity.** When a module already deviates from the rule (older Unity modules where every translation unit has a `*Impl.cpp` suffix and the headers do not), do not raise renaming findings on files that follow the existing local convention. Strict consistency applies to **new** sources where there is no incumbent local pattern to honour.
+   - **Header-only files.** No matching `.cpp` is required when the header is genuinely header-only (`inline constexpr` + `inline` functions only, template-only, traits). The rule fires when the header declares any out-of-line entity (free function, member function, namespace-scope `extern` variable).
+   - **One header, multiple implementation TUs.** Acceptable when the header's API has genuinely separable definition surfaces (PIMPL + platform shim; declaration in `Foo.h`, primary in `Foo.cpp`, platform variants in `Foo_Win.cpp` / `Foo_Posix.cpp`). The *primary* TU still uses the matching basename; the variants carry a documented suffix.
+
+   Raise as **MUST** when the diff *introduces* a mismatched triple in a folder where no existing local convention requires it. **SHOULD** when a mismatched file lands in a module whose existing files split the same way (signals the next contributor will copy the pattern; correcting now is cheap). **NICE** when only the test file's basename differs (`<Basename>.cpp` / `<Basename>RoleTests.cpp`).
+
+   **Compartmentalisation rule -- prefer subfolders that group related concerns; do NOT raise a "flatten this back into the parent folder" finding.** A subfolder that holds even a single source + its test + its registration TU together is a feature; flattening it back into the parent folder is an anti-finding. The signals that a subfolder is *earning its keep* are:
+
+   - **Sources and tests co-located.** `Feature/Foo.cpp` + `Feature/FooTests.cpp` in one folder beats `Foo.cpp` and `FooTests.cpp` scattered among unrelated siblings in a crowded parent folder. The reviewer's recall question -- "where is the test for this file?" -- is answered by `ls Feature/`.
+   - **Forward-looking grouping is named.** A subfolder created for one file today, with a clear concept name (`Roles/`, `Validators/`, `Boot/`), telegraphs the intended growth axis to the next contributor. The next file lands as a sibling automatically.
+   - **Parent folder is crowded.** Adding the file flat into a 20+ file directory degrades the parent's readability for everyone; the subfolder pays for itself the moment the parent is already large enough to need its own table-of-contents pass when grepping.
+
+   Folder hierarchy is the cheapest discovery mechanism the file system offers. Findings that ask to flatten a working subfolder back into a parent on YAGNI grounds throw that discovery mechanism away and shift the cost onto every future reader. Apply the principle "compartmentalists prefer folders" -- when a layout could reasonably go either way (flat or sub-folder), the subfolder is the structural-review-preferred answer.
+
+   The conventional exception: a one-off helper that has no plausible sibling (`Utility/Once.h` for a single helper used by one consumer) does not require a subfolder. But this is the rare case; the default is to compartmentalise.
 9. **Check for legacy idioms and commenting.** Load `../cpp/references/cpp-modernisation.md` and apply its tier tables to all new and touched code. Apply **after** step 7 so project utilities (reinvention catalogue) take precedence over generic modernisation. In parallel, load `../cpp/references/cpp-commenting.md` and apply its MUST/SHOULD table to every new or changed class, struct, and function declaration **and to all comment blocks within changed function bodies**. For inline body comments, apply the verbose-comment heuristic (the SHOULD rule on blocks exceeding ~8 non-blank lines): flag as SHOULD when sentences describe what the code does rather than why, explain well-known standard library behaviour, or repeat a point already made in the same block. See `cpp-commenting.md > Example E` for the worked example and trimming pattern.
+
+   **Cross-reference hygiene sub-check.** When a comment trim or new comment cites another file or `@section` anchor (`// see Foo.h @file`, `// per AGENTS.md ...`, `@ref X`), apply `cpp-commenting.md > Cross-reference hygiene`: the local site must carry a one-line gist of the property the pointer is justifying, with the pointer placed as a *lead-out* for the detail-hungry reader -- not as the opening line of the block. Bare pointers without a preceding gist force every local reader into a lateral jump that the gist would have prevented. The failure mode is most common after an aggressive comment-trimming pass (verbose-block SHOULDs that get over-applied collapse rationale paragraphs to bare `// see ...` pointers). Peer `@see` / `@sa` lists between related declarations are exempt -- they are navigation, not rationale.
+
+   **Project-wide-invariant sub-check.** Apply `cpp-commenting.md > Project-wide invariants belong in one canonical place` against every multi-line comment block at a slot governed by a project-wide rule -- TU-statics and namespace-scope objects (static-init no-heap allocation), `noexcept` engine functions (terminate-on-throw policy), `core::*` container declarations (engine container choice), allocator-tag selections, reflection / serialization macros. The **copy-paste test** is the discriminator: would the comment apply, verbatim, at every other consumer of the same convention in the same module or TU? If yes, the paragraph belongs upstream (in the canonical doc -- `cpp-commenting.md`, the org-overlay `unity-commenting.md`, the project `AGENTS.md`, or the primitive's `@file` block) and the consumer-site restating is a **SHOULD**. Trim to the consumer-specific WHY that survives the copy-paste test. See `cpp-commenting.md > Example F` for the worked trim. This sub-check is distinct from cross-reference hygiene: cross-reference hygiene says *when you do reference, lead with the gist*; this rule says *you often need no comment at all -- the choice flows from project convention*. Both can fire on the same block.
+
+   **Modernisation grep sub-check.** Modernisation findings most often slip through when the reviewer reads for architectural smells and runs out of attention before the mechanical idiom pass. The following greps run in seconds against the diff and have a high signal-to-noise ratio against `cpp-modernisation.md > Loops`. Run them explicitly -- do not rely on line-by-line reading of changed function bodies to catch these.
+
+   - `for\s*\(\s*(size_t|int|unsigned|auto)\s+\w+\s*=\s*0\b` -- counter-style index loop. Apply the **index-use test**: if the counter is used only to index the same container the size came from (`v[i]`, `mappings[i]`), raise **SHOULD** range-for conversion (`cpp-modernisation.md > Loops`, row 1). Suppress when the counter is the loop's natural output: an index returned on a hit (`return i;`), an `std::distance`-style position calculation, a strided / skipping loop that range-for cannot express, or a parallel-array zip where two distinct containers are indexed in lockstep at every iteration. Worked example: Example 10.
+   - `for\s*\(\s*auto\s+\w+\s*=\s*[\w.]+\.begin\(\)` / `for\s*\(\s*\w+::const_iterator\s+` -- explicit iterator-pair loop; same SHOULD per `modernize-loop-convert` (`cpp-modernisation.md > Loops`, row 2).
+   - `it->first|it->second` inside a `for` over a map -- structured bindings (`for (const auto& [key, val] : map)`); SHOULD per `cpp-modernisation.md > Loops`, row 5.
+   - `\.size\(\)\s*==\s*0` / `\.size\(\)\s*!=\s*0` -- prefer `.empty()` / `!.empty()`; NICE per `cpp-modernisation.md`.
+
+   The greps are mechanical and the index-use test keeps the false-positive rate near zero. They catch what `clang-tidy modernize-*` would catch if it ran -- absent a project clang-tidy config that already pins them. AI code-review bots (e.g. `u-pr[bot]` on Unity PRs) raise these reliably; a cpp-review pass that ships first should beat them to it.
 10. **API-contract findings -- input-source check.** Before raising a finding that says "guard call site Y against API behaviour X (NULL element, exception, edge case, wider-domain return value) that the API contract documents", first ask: **can Y actually trigger X?**
 
     - If Y constructs the input to the API in-place (a `static const Foo[]` literal a few lines above the call site, a default-constructed value, a parameter the same function just validated), then Y cannot trigger X. The defensive code the finding proposes pretends to enforce something Y itself cannot violate, and adding it inverts the API contract: if every consumer must defend, the API isn't really enforcing the contract -- it is naming the behaviour and forcing every reader of every consumer table to redo the check.
@@ -182,7 +216,19 @@ Before producing any finding, the reviewer **must** load enough context to make 
 
 11. **Check for debug-only work in release builds.** Scan for loops, recursions, or O(n) searches whose only purpose is to feed an `Assert` (or any macro that strips its expression in release — `AssertMsg`, `DebugAssert`, etc.). The tell is a `for` or `while` loop immediately before or wrapping an `Assert` where the loop body contains no statements that survive the release build. The loop runs as dead work in every release binary. Fix: move the computation inside the Assert expression itself — a named helper function called only as `Assert(helper() == expected)` is the most readable form, because the compiler eliminates the call in release when the Assert strips. Raise as **SHOULD** when the dead work is O(n) over an unbounded collection; **NICE** when it is provably short or bounded. This pattern is distinct from a loop that does real release work AND also asserts on its result (e.g. a traversal that both finds a predecessor pointer for unlinking AND asserts membership) — those loops are not findings.
 
-12. **Check for global state that hurts testability.** Look for `s_*` / `g_*` file-statics, function-local statics owning cached state, and ad-hoc singletons. The dominant tell is a test-build conditional bypass (e.g., `#if ENABLE_UNIT_TESTS_WITH_FAKES` or equivalent) -- it is the author's admission the design is testability-hostile. Raise **MUST** when the bypass exists; **SHOULD** when no bypass exists yet but adding alternative test configurations would force one. Remediation: derive from the project's `Singleton<T>` utility or equivalent CRTP singleton pattern. See `../cpp/references/cpp-modernisation.md > Globals, singletons, and testability seam` for the full pattern and worked example.
+12. **Check for project PR-body template.** When the diff is associated with a published PR (or a new PR is about to be authored), look for a project PR template before producing or critiquing the PR body:
+
+    - `.github/pull_request_template.md` (single template) -- if present, **the project template wins**; the `Suggested PR Summary` block (when emitted) and any PR-body finding **must** use its section headings verbatim.
+    - `.github/PULL_REQUEST_TEMPLATE/*.md` (multi-template directory) -- pick the template whose name best matches the change shape, or note in the finding that the choice is the author's.
+    - Module-local templates (e.g. `Tools/<name>/.github/pull_request_template.md`) -- apply when the diff is scoped to that module.
+
+    If no template exists, fall back to the generic `Suggested PR Summary format` shape below.
+
+    When a published PR's body **does not match** an applicable template (sections missing, headings renamed, free-form replacement), raise as **SHOULD** with the template path as evidence and a `## Suggested PR Summary` block populated against the template. This finding fires even when no L0 prose-drift finding fires -- the absence of the template structure is a finding in its own right.
+
+    The dominant failure mode this rule prevents: an authoring agent (or human in a hurry) writes a PR body in whatever shape feels natural for the change, ships it, and a sibling reviewer who relies on the template's risk-assessment / release-notes / Agentic-AI sections cannot find them. The fix is one cheap step at PR-create time, expensive after the fact (every reviewer redoes the lookup).
+
+13. **Check for global state that hurts testability.** Look for `s_*` / `g_*` file-statics, function-local statics owning cached state, and ad-hoc singletons. The dominant tell is a test-build conditional bypass (e.g., `#if ENABLE_UNIT_TESTS_WITH_FAKES` or equivalent) -- it is the author's admission the design is testability-hostile. Raise **MUST** when the bypass exists; **SHOULD** when no bypass exists yet but adding alternative test configurations would force one. Remediation: derive from the project's `Singleton<T>` utility or equivalent CRTP singleton pattern. See `../cpp/references/cpp-modernisation.md > Globals, singletons, and testability seam` for the full pattern and worked example.
 
     **Three-path check for testability changes.** When the diff is adding testability to existing code, verify which path was taken -- in preference order:
     - *Additive*: new method/type/overload alongside unchanged existing surface -- generally valid; no existing semantics touched.
@@ -240,7 +286,7 @@ Ask these before reading any code. They establish whether the PR is doing the ri
 Ask these before reading any implementation. They establish whether the new structure belongs at all and whether it is in the right place.
 
 1. **Does this abstraction justify its existence?** Is there more than one concrete *production* consumer in this commit, or is this pre-emptive indirection (YAGNI)? Tests exercising only the new artifact itself do not count as production consumers. A single-implementation class with no polymorphism requirement is SHOULD-collapse to a namespace + free functions. Upgrade to MUST when the indirection carries real cost: virtual dispatch on a hot path, an extra heap allocation, or an additional header dependency in a public API.
-2. **Is it in the right module / boundary?** Apply the existing code-location check. Additional L1 signal: does the new type or include introduce a module boundary crossing that requires a project policy allowlist entry?
+2. **Is it in the right module / boundary?** Apply the existing code-location check. Additional L1 signal: does the new type or include introduce a module boundary crossing that requires a project policy allowlist entry? **Compartmentalisation default:** when a new file lands in a subfolder that groups related sources + their tests (`Feature/Foo.cpp` + `Feature/FooTests.cpp` together), do *not* raise a finding to flatten it back into the parent folder -- the subfolder is the L1-preferred answer when the parent is crowded or the subfolder is a named growth axis. See step 8 of *Pre-finding context load* for the full rule.
 3. **Is the ownership model unambiguous?** Who creates, who destroys, who observes? If a code reader cannot answer from the header alone, that is a MUST documentation (and often design) problem.
 4. **Are new module dependencies acyclic?** A new `#include` that creates a cycle in the module DAG is MUST.
 5. **Would a plain data struct + free functions be equivalent?** A class whose every method accesses only its own members and enforces no invariant has no reason to be a class. Stateless "helper classes" with no state and no inheritance are candidates for namespace-scope functions.
@@ -467,6 +513,102 @@ Findings deliberately not raised:
    Suggested: move the helper to the argv utility module;
               keep the call site in Module/Src/Feature.cpp.
 ```
+
+### Example 5b -- Compartmentalisation finding (NOT raised)
+
+The plan proposes a new file at `Runtime/Application/Roles/EditorRole.cpp`
+together with its sibling `Runtime/Application/Roles/EditorRoleTests.cpp`,
+creating a new `Roles/` subfolder. The subfolder currently contains only
+the one feature (one source + its test). A reviewer applying a flat-by-default
+heuristic might be tempted to raise:
+
+```text
+3. [SHOULD / L1-PLAN] Plan §"B. Editor role": "Runtime/Application/Roles/EditorRole.cpp"
+   -- the proposed Roles/ subfolder organises a single file ahead of any second
+   occupant. Premature; flat Runtime/Application/EditorRole.cpp matches sibling
+   files at depth 1.
+```
+
+This finding is an anti-finding under the *Compartmentalisation rule*
+(`Pre-finding context load` step 8) and the L1 *Right module / boundary*
+default (item 2). Suppress it. The subfolder:
+
+- Co-locates the source with its test in one folder -- the reviewer's
+  recall question "where is the test for this file?" is answered by
+  `ls Runtime/Application/Roles/`.
+- Telegraphs a clear growth axis (`Roles/` will hold the Host, Worker-Standard,
+  Worker-Middleweight role files as they land).
+- Pays for itself the moment the parent `Runtime/Application/` is crowded
+  enough to need a table-of-contents pass on `ls` -- which it already is.
+
+Findings deliberately not raised, with the entry that belongs in that section:
+
+```text
+- "Move EditorRole.cpp out of Runtime/Application/Roles/ back into the parent
+  folder" -- the subfolder co-locates a feature's source and test, telegraphs
+  Roles/ as a growth axis, and protects the already-crowded parent folder's
+  readability. Compartmentalisation rule (step 8) applies.
+```
+
+The failure mode this example guards against: a plan-review pass that applies
+"YAGNI flatten until a second occupant exists" without checking the
+compartmentalisation rule. The rule is the L1 / file-organisation default;
+the only valid flatten finding is one where the subfolder has no plausible
+sibling axis and is not relieving a crowded parent.
+
+### Example 5c -- Filename / basename mismatch (MUST raise for new files)
+
+The diff introduces five new feature folders, each carrying a header that
+declares the feature's API surface and a `.cpp` that defines it. The
+basenames disagree:
+
+| Header | Implementation | Tests |
+|---|---|---|
+| `Editor.h` | `EditorRole.cpp` | `EditorRoleTests.cpp` |
+| `Dataless.h` | `DatalessRole.cpp` | `DatalessRoleTests.cpp` |
+
+A reader who finds `Application::Editor::IsActive` declared in `Editor.h`
+and wants its implementation expects `Editor.cpp` next to it. They scan the
+folder, find no such file, then have to grep the folder for "the cpp that
+mentions `Editor::IsActive`" -- the file system has stopped being the
+discovery mechanism. The pair-mate (`AssetImportWorkerLegacyBridge.cpp` ↔
+`AssetImportWorkerLegacyBridgeTests.cpp`) in the same module already
+obeys the rule; the role files are the irregularity.
+
+```text
+1. [MUST / L1] Modules/.../Editor.h + .../EditorRole.cpp -- new header
+   and its primary implementation disagree on basename; the same pattern
+   recurs across five new folders in this diff. Mismatched triples force
+   readers who find a declaration to grep for the definition instead of
+   navigating to <Basename>.cpp adjacent.
+   Evidence: L1 (file organisation): Pre-finding context load step 8,
+             "Filename / basename consistency rule". Existing local
+             pattern in the same module (AssetImportWorkerLegacyBridge.{cpp,Tests.cpp})
+             follows the rule; the new files are the deviation, not the
+             other way round. Five folders introduced in this PR, none
+             carry a prior local convention to honour.
+   Suggested: rename headers to match the .cpps -- Editor.h -> EditorRole.h,
+              Dataless.h -> DatalessRole.h, ... Five .h renames + include-path
+              updates in each consumer; .cpp and Tests.cpp names unchanged.
+              Rename direction prefers the role-suffixed basename because the
+              header content IS the role's API surface, so EditorRole.h is
+              more descriptive than Editor.h (which a reader might assume is
+              the broader Editor module's header).
+```
+
+Why MUST and not SHOULD:
+- The diff *introduces* the mismatch; no incumbent local convention asks
+  for the deviation.
+- The cost of the fix at this point is five `git mv` operations and a
+  handful of include-path updates -- one digit of files.
+- The cost of *not* fixing scales linearly with the number of future
+  contributors who will reach for the file and have to grep. The next
+  contributor will also copy the pattern when they add a sixth role.
+
+Suppress only when:
+- The module's existing files already split this way (legacy convention to honour).
+- The header is genuinely header-only with no out-of-line definitions
+  (no `.cpp` exists or needs to exist).
 
 ### Example 6 -- Pre-existing finding (with quick-win)
 
@@ -707,6 +849,79 @@ author can verify. Add a "Stale-base correction" line to the
 *Review Retrospective > Iteration log* if the iterative review mode is
 active, naming which findings were withdrawn and why.
 
+### Example 10 -- Modernisation grep (range-for SHOULD; index-use test suppresses the sibling)
+
+The diff introduces two overloads of a `MatchToken` helper in a header. Both use counter-style `for (size_t i = 0; i < container.size(); ++i)`. A surface read either raises the finding on both, raises on neither, or -- most commonly -- misses both because the reviewer is focused on architectural smells and runs out of attention before reaching the mechanical-idiom pass.
+
+The *Modernisation grep sub-check* in step 9 finds both loops in a single ripgrep call. The **index-use test** then discriminates: raise the finding on overload 1, suppress on overload 2.
+
+```cpp
+// Overload 1 -- typed-value lookup, returns const T*.
+template <class T>
+const T* MatchToken(core::string_ref value,
+    core::array_ref<const TokenMapping<T>> mappings,
+    ComparisonType comparison) noexcept
+{
+    for (size_t i = 0; i < mappings.size(); ++i)
+    {
+        const TokenMapping<T>& row = mappings[i];   // i used only as [i]
+        if (value.compare(row.token, comparison) == 0)
+            return &row.value;                      //   ^- not the return value
+    }
+    return nullptr;
+}
+
+// Overload 2 -- index lookup, returns size_t.
+size_t MatchToken(core::string_ref value,
+    core::array_ref<const core::string_ref> tokens,
+    ComparisonType comparison) noexcept
+{
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        if (value.compare(tokens[i], comparison) == 0)
+            return i;                               // i IS the return value
+    }
+    return tokens.size();                           // and the natural sentinel
+}
+```
+
+```text
+N. [SHOULD / L3] Modules/.../TokenMapping.h:59 -- counter-style index loop
+   over `mappings` where the counter is only used to index the container.
+   range-for is strictly cleaner and removes the redundant
+   `const TokenMapping<T>& row = mappings[i];` binding line.
+   Evidence: L3 (idiom): `cpp-modernisation.md > Loops`, row 1
+             (`modernize-loop-convert`). Index-use test: `i` is referenced
+             only as `mappings[i]` inside the loop body; the return path
+             uses `&row.value`, not the index.
+   Suggested:
+       for (const auto& row : mappings)
+       {
+           if (value.compare(row.token, comparison) == 0)
+               return &row.value;
+       }
+```
+
+Findings deliberately not raised:
+
+- The sibling `size_t MatchToken(...)` overload at `:110` retains its
+  counter loop because the index *is* the return value (`return i;`) and
+  `tokens.size()` is the natural sentinel on no-match -- range-for would
+  force a separate counter variable or an `std::distance` walk, both
+  worse than the existing form. The index-use test suppresses the
+  finding here; the reviewer's `## Findings deliberately not raised`
+  section names the suppression so the next reader of the report does
+  not mistake the omission for an oversight.
+
+The failure mode this example guards against: a cpp-review pass that
+focuses on L1 / L2 architectural concerns (does the helper exist? does
+the API shape pass the minimal / complete test?), spends its attention
+budget there, and skips the mechanical L3 grep. The same finding then
+arrives from an AI code-review bot post-merge-prep and lands as a
+follow-up commit on the published chain (per *Landing fixes on a
+published chain*) -- avoidable if the modernisation grep ran during the
+original review.
+
 ## Rewrite Brief format
 
 Emit this block at the end of the findings report whenever one or more L0 or L1 MUST findings fire. It is consumed verbatim by the `cpp-simplify` executor skill. Write it so a fresh agent with no session context can apply every change without back-reference to the review.
@@ -820,9 +1035,142 @@ Emit this block at the end of the plan-review findings report whenever one or mo
 
 ## Suggested PR Summary format
 
-Emit this block at the end of the findings report when one or more L0 prose-drift findings (L0 item 6) fire. The reviewer has already done the full stranger-reader pass; the summary is a by-product of that understanding. Write it so the author can accept, edit, or decline without re-reading the findings report.
+Emit this block at the end of the findings report when **either**:
+- one or more L0 prose-drift findings (L0 item 6) fire, **or**
+- a PR-body template finding (Pre-finding context load step 12) fires because an applicable project template exists and the PR body does not match it.
+
+The reviewer has already done the full stranger-reader pass; the summary is a by-product of that understanding. Write it so the author can accept, edit, or decline without re-reading the findings report.
 
 The summary describes what the diff actually does on trunk -- no development-history leakage, no reference to discarded iterations or intermediate designs.
+
+### Voice -- the "elevator pitch" rule for the Purpose / equivalent section
+
+The first section of any PR body (`Purpose of this PR` in Unity-style templates, `### Summary` in generic ones) is an **elevator pitch**, not a catalogue of changes. Write one or two paragraphs of natural English that answer: *what does this change mean for someone working in this area?* Anchor on the **problem the change solves** and the **value it adds**. The diff itself shows what was added.
+
+Specifically, suppress the following from the Purpose section:
+
+| Anti-pattern | Why suppress | Where it belongs instead |
+|---|---|---|
+| Bullet lists of new types, files, or APIs | The reviewer can read the diff; the bullet list duplicates it | Nowhere in the PR body |
+| Catalogue code snippets (multiple blocks touring the API) | Live in the header doc comments where the next reader of the code will find them | Header doc comments / module doc |
+| "Stacked on PR #X" / "based on branch Y" | GitHub's UI already shows the base branch | Drop entirely |
+| Recitation of threading / lifetime / ordering / layering contracts | Live in doc comments adjacent to the declarations they describe | Doc comments |
+| Jira / EAD references not material to the elevator pitch | Add cognitive load without explaining the change | Optional one-line trailer if the link genuinely helps |
+| Out-of-scope / follow-up enumerations beyond a single sentence | Speculative; reviewers care about *this* PR | One sentence at most, only when the scope boundary is non-obvious |
+| Phrases like "What this PR adds" / "What this PR does" followed by bullets | Same as above -- catalogue, not pitch | Pitch the value, do not list the deliverables |
+
+The model: read the framing block at the top of the file the diff introduces (or the `@brief` of the principal new class). That prose is the elevator pitch -- it earned that position because it had to make the design legible without code. The Purpose section uses the same voice. If the diff has no such framing prose, write the elevator pitch first in prose, then port it to a doc comment in the code; both surfaces benefit.
+
+### Pitch shape -- two-to-three paragraphs
+
+The Purpose section is consistently shaped:
+
+1. **Paragraph 1 -- the problem in its current form.** What consumers do today, what is missing or annoying, what falls through the cracks. Specific enough that a reader who works in the area recognises the shape ("flat key/value bag", "every consumer reinvents", "deferred crash", "ad-hoc glue at every call site"). Avoid generalities like "this is needed for X" or "we want to support Y" -- those describe the *direction*, not the *problem*.
+
+2. **Paragraph 2 -- the change in plain English.** Name the user-facing surface in narrative prose, not as a catalogue. Include the concrete consumers / migrations / call sites that make it real. State a key non-goal explicitly when the reviewer might otherwise assume the wrong scope ("the framework knows nothing about `ApplicationMode`", "tests swap the handler", "argv consumers do not churn").
+
+3. **Optional paragraph 3 -- scope clarification.** Used sparingly, only when the reader would otherwise mistake what is and is not landing. Example: *"The wiring is live: every `Init` variant runs the registry. No production rules are registered yet -- the first consumers land in the next PR alongside their owner sign-off."*
+
+### One exemplar code block is allowed -- a tour is not
+
+The "no code snippets" rule above is a guard against catalogue tours of every type the diff introduces. A single short block showing the new surface in use -- the elevator pitch *in code*, the shape a consumer will write -- is genuinely valuable when the API shape is non-obvious from prose. Use the exemplar when it carries weight the prose cannot, and skip it when the prose already conveys the shape.
+
+Rules of thumb:
+
+- **One block, not a tour.** If the second snippet would be needed to make the first land, neither belongs in the PR body -- the API is not yet legible enough and the worked example belongs in a header docblock.
+- **Show the consumer surface, not the implementation.** A reader skimming the PR wants to know "what will my call site look like?" -- not the contents of the new types.
+- **Keep it short.** Five to fifteen lines is normal. If it does not fit on one screen, it is too much.
+- **Use realistic names.** Pick a real consumer in the diff or a plausible one; do not invent placeholder identifiers (`Foo`, `Bar`) -- those make the example feel synthetic.
+
+When the new surface is a thin wrapper around something the reader already knows, skip the exemplar -- prose will do the job and the snippet adds noise. The judgement call: *would this reader, who has the framing paragraph in mind, learn something new from the snippet?* If yes, include it.
+
+### Worked example
+
+The Purpose section of [PR #105556](https://github.cds.internal.unity3d.com/unity/unity/pull/105556) -- a NativeKernel rules-engine framework -- as the canonical reference voice:
+
+> `BootConfig` today is a flat key/value bag: it records what the user typed on the command line and `boot.config`, but knows nothing about which *combinations* are meaningful. When a switch is invalid in a given context -- `-dataless` outside an import worker, two `-mode` values, an editor-only flag passed to a worker -- the only options today are silent acceptance, a deferred crash in some downstream subsystem, or hand-rolled checks scattered across consumers. None of those reach the user with an actionable remedy.
+>
+> This PR introduces a small token-agnostic rules engine on top of `BootConfig`. Boot code can now declare what it expects to see -- "if this flag is present, that mode must be active", "exactly one of these values", "this mode forbids these other switches" -- as named static rules. Two passes run during init: defaults are injected first, then validation collects every breach and reports a remedy hint through a swappable handler (stderr by default). The framework is deliberately built without any reference to `ApplicationMode` or other application concepts; cross-cutting policy lives downstream where it belongs, and each subsystem keeps ownership of its own switches.
+>
+> The wiring is live: `BootConfig::Init`, `InitFromString`, and `InitFromFile` all run the registry against the global `Data` once it is populated. No production rules are registered yet -- the first consumers (the `-dataless` PoC and the `-mode` allowlist) land in the next PR alongside their owner sign-off.
+
+Why this works:
+- Paragraph 1 anchors on *today* with three concrete failure modes.
+- Paragraph 2 introduces the new surface in narrative prose, picks two examples the reader can hold in their head, and pins down the layering non-goal explicitly.
+- Paragraph 3 prevents the natural follow-up question ("does this break anything?") by stating up-front that the wiring is inert until consumers register.
+- Total: ~210 words. Three callouts, no bullet list, no code snippet, no stacking reference.
+
+### Voice -- other sections
+
+The elevator-pitch discipline applies *throughout* the body, not only in the Purpose section. Every section is read by the same reviewer, in the same sitting, with the same appetite for signal-over-noise. Suppress the same anti-patterns everywhere they appear.
+
+**Functional Testing status.** The suite name, the count, and one short sentence on what is pinned. Not a table of test names. Not bullets per test. The reviewer can scan the test file if they want the names; the body just has to assert "the contract is covered" with enough detail to make that claim credible.
+
+| Anti-pattern | Why suppress |
+|---|---|
+| Tables or bullets enumerating individual test names | The diff already lists every test; the body should not duplicate it |
+| Per-test "what it pins" rationale | Lives in the test name and the code; if a test name does not say what it pins, fix the *test name* |
+| Process narrative ("first I tried X, then I added Y") | The reviewer is not interested in the development arc |
+
+**Performance Testing Status.** One sentence stating whether the change touches perf surface and the level of confidence. Skip the explanation entirely when there is no perf surface ("Boot-time only, allocation-free; no perf surface."). Avoid lecturing.
+
+**Overall Product Risks.** A score plus a one-sentence justification. The justification names the *load-bearing* reason in one short clause, not a paragraph.
+
+| Anti-pattern | Why suppress |
+|---|---|
+| `Reviewer guess:` / `Confirm before publishing` / `?` / `TBD` | Notes-to-self that should have been resolved before publishing. Commit to a number; if uncertain, say "best guess" in a clause and the author can correct |
+| Multi-line justification block-quoting the same content | One sentence is enough; if it needs more, the risk number is probably wrong |
+
+**Comments to reviewers.** This section is where most density creeps back in. It is *not* a place to recap the PR or list every aspect that received careful design. Write it as if you are greeting the reviewer in person: *"start here, look at this first, this one assumption is the load-bearing one, please flag if I missed a platform"*. One to three bullets is normal. More than that is a sign the PR is too large or the body is doing the reviewer's work for them.
+
+| Anti-pattern | Why suppress | Where it belongs instead |
+|---|---|---|
+| References to specific Doxygen sections / docblocks ("the `@section foo_bar` block is the load-bearing prose") | The doc comments speak for themselves when the reviewer reads the code | Drop -- the reviewer will find them |
+| Process meta-commentary ("`cpp-review` run; 1 MUST + 4 SHOULD + 2 NICE applied; 1 deferred...") | The reviewer cares about the *current* state of the diff, not the development pipeline that produced it | Drop -- it is implicit that review and iteration happened |
+| "Local validation: <command> green" lists | Same content as the Functional Testing section | Drop here -- one mention in Functional Testing is enough |
+| Bullets that re-state contract details already in code comments | Duplicates the doc comments and de-anchors them | Drop -- point at the area, not the contract |
+| Stack/branch ordering ("base is X; auto-rebases when X merges") | GitHub shows base branch and the auto-rebase happens regardless of the body | Drop entirely |
+
+When in doubt: ask yourself *"would the reviewer learn anything from this bullet that they would not learn by opening the file?"* If no, delete the bullet.
+
+### Project template wins when one exists
+
+If the project ships a PR template at `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE/*.md`, or a module-local equivalent (per Pre-finding context load step 12), **use that template's section headings verbatim**. Do not substitute the generic shape below. Read the template before drafting; cite the path in the block intro so the author can verify the choice.
+
+When the template carries placeholder italic guidance (e.g. `*[Description of feature/change.]*`), replace each placeholder with content drawn from the diff and review pass; do not leave placeholders in the suggested body. Required sections common in Unity-style templates that cannot be inferred from the diff alone (e.g. `Technical Risk: 0–3`, `Halo Effect: 0–3`, `Agentic AI Questionnaire` checkboxes) get the reviewer's best guess **flagged with a one-line note** so the author corrects them before publishing rather than accepting them by accident.
+
+Example block intro when a template is in play:
+
+```markdown
+## Suggested PR Summary
+
+> Drafted against `.github/pull_request_template.md`. Risk scores and the
+> Agentic AI checkboxes are reviewer guesses -- confirm before publishing.
+
+## Purpose of this PR
+<...>
+
+## Release Notes
+<...>
+
+## Functional Testing status
+<...>
+
+## Performance Testing Status
+<...>
+
+## Overall Product Risks
+Technical Risk: <0-3 best guess>
+Halo Effect: <0-3 best guess>
+
+## Agentic AI Questionnaire
+- [ ] <preserve template checkboxes; tick those the reviewer can confirm from session evidence>
+
+## Comments to reviewers
+<...>
+```
+
+### Generic fallback shape (no project template found)
 
 ```markdown
 ## Suggested PR Summary

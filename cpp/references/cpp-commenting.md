@@ -46,6 +46,64 @@ suppress list governs that case. The rule **does** apply to anything whose
 contract has lifetime, ordering, mutation, error, or thread-safety semantics
 the name does not carry.
 
+### File-level `@file` block placement
+
+When a header (or `.cpp`) carries a top-of-file `@file` / `@brief` doc block,
+place it **immediately after `#pragma once`** (or after `#include "UnityPrefix.h"`
+in a `.cpp` where the precompiled header is mandatory) and **before any
+other `#include` directive**:
+
+```cpp
+// CORRECT -- header doc block surfaces purpose before dependencies
+#pragma once
+
+/** @file Foo.h
+ *  @brief One-sentence statement of what this file is for.
+ *
+ *  Longer description...
+ */
+
+#include "Bar.h"
+#include "Baz.h"
+```
+
+```cpp
+// CORRECT -- .cpp variant; UnityPrefix.h stays the mandatory first include
+#include "UnityPrefix.h"
+
+/** @file Foo.cpp
+ *  @brief Implementation notes for Foo.
+ */
+
+#include "Foo.h"
+#include "Bar.h"
+```
+
+```cpp
+// WRONG -- @file block buried after the include list
+#pragma once
+
+#include "Bar.h"
+#include "Baz.h"
+#include "Qux.h"
+// ...several more lines of includes...
+
+/** @file Foo.h    // <- reader has already scrolled past this trying to
+ *  @brief ...     //    find the declarations and never reads it
+ */
+```
+
+**Rationale.** A reader's mental order on opening a file is "what is this?"
+→ "what does it depend on?" → "what does it declare?". Pattern A matches that
+order; Pattern B (after includes) forces the reader past 5–15 include lines
+before they reach a statement of purpose, and many readers stop reading at
+the include block and start scrolling for declarations. The `@file` block
+never gets read in Pattern B except by readers who already know what they
+are looking for — at which point it adds no value.
+
+Both placements produce identical Doxygen output; the rule is purely about
+how the file reads in source.
+
 ### Section-divider banner comments are a smell
 
 Comments shaped like
@@ -89,24 +147,49 @@ signal.
 
 ## Comment style
 
-Three distinct comment forms; each has a specific role:
+Five comment forms. Each has exactly one role -- do not substitute one for another.
 
-| Form | Role | Example context |
+| Form | Role | When |
 | --- | --- | --- |
-| `/** */` | Public/user documentation block -- multi-sentence or multi-section Doxygen comment | Class, struct, enum, multi-param function |
-| `///` | Public/user documentation line -- single-sentence Doxygen comment | Short function, single-field annotation |
-| `///<` | Trailing/right-side Doxygen annotation on the same line | Enum value, struct member |
-| `/* */` | Inline developer-aid block -- non-doc, explains implementation behaviour | Multi-line workaround note inside a body |
-| `//` | Inline developer-aid line -- non-doc, WHY comment | Single-line body note |
+| `/** */` | Public doc block (Doxygen) | **Any** multi-line doc comment: two or more sentences, or any `@tag` section. This is the only correct multi-line doc form. |
+| `///` | Public doc line (Doxygen) | **Exactly one sentence**, no tags. One `///` line per declaration, never stacked. |
+| `///<` | Trailing doc annotation (Doxygen) | Same-line annotation on an enum value or struct member. |
+| `/* */` | Developer-aid block (non-doc) | Multi-line implementation note inside a function body. |
+| `//` | Developer-aid line (non-doc) | Single-line WHY note inside a function body. |
+
+### The multi-line rule
+
+**A doc comment that spans more than one line must use `/** */`.** Stacking
+multiple `///` lines to form a multi-line comment is wrong -- it defeats
+tooling paragraph-reflow, obscures the block boundary, and creates ambiguity
+about whether adjacent `///` lines are one comment or separate briefs.
 
 ```cpp
-/** Multi-line public documentation block.
+// CORRECT -- multi-line doc uses /** */
+/** Resolves the active context for the current thread.
  *
- * Use when more than one sentence or a tag section is needed.
+ * Returns nullopt when no context has been bound.
+ *
+ * @param scope  Limits resolution to the given scope; pass
+ *               Scope::Global for an unrestricted lookup.
+ * @return The active context, or nullopt.
  */
 
-/// Single-sentence public documentation -- preferred for short declarations.
+// CORRECT -- single-sentence doc uses ///
+/// Returns the number of registered providers.
 
+// WRONG -- stacked /// lines forming a multi-line comment
+/// Resolves the active context for the current thread.
+///
+/// Returns nullopt when no context has been bound.
+///
+/// @param scope  Limits resolution to the given scope.
+/// @return The active context, or nullopt.
+```
+
+Other forms unchanged:
+
+```cpp
 int m_Count; ///< Current number of live items; excludes pending-destroy.
 
 /* Non-doc block: explains a non-obvious implementation constraint that
@@ -153,6 +236,47 @@ class Bar {};
 
 ## Function / method doc template
 
+Public and reusable API functions in headers **must** document every
+parameter and every non-void return value with Doxygen tags. The header is
+the only surface a caller reads -- undocumented parameters force the caller
+into the implementation.
+
+### Required tags
+
+| Tag | Required when |
+| --- | --- |
+| `@param` | **Every** parameter of a public/reusable function declared in a header. Use directional annotations: `@param[in]`, `@param[out]`, `@param[in,out]`. |
+| `@return` | Every non-void return. State what the value represents **and** what sentinel values (false, nullptr, nullopt, empty) signal. |
+| `@pre` | Any precondition not expressible in the type system. |
+| `@note` | Thread-safety contract; `noexcept` terminate-on-throw contract. |
+| `@see` | Cross-references to related declarations when the relationship is non-obvious. |
+| `@tparam` | Every template parameter whose name + constraints do not fully convey the contract. |
+
+### Narrow suppressions for `@param`
+
+Omit `@param` **only** when **all** of the following hold:
+
+1. The function is a trivial getter/setter or single-parameter predicate.
+2. The parameter name + type together leave zero ambiguity.
+3. No directionality, units, null/empty contract, or lifetime semantics apply.
+
+When in doubt, document. A redundant `@param` is a minor style cost; a
+missing one is a contract gap.
+
+### `@param` content rules
+
+- **State the contract, not the type.** "The scope to search within" beats
+  "A Scope value". The caller can see the type; the comment adds what the
+  type does not carry.
+- **Document valid ranges, null/empty semantics, and ownership.** "Must not
+  be empty; pass `Scope::Global` for unrestricted lookup" is useful.
+  "The scope" is not.
+- **Use directional annotations consistently.** `[in]` is the default; mark
+  `[out]` and `[in,out]` explicitly so the caller knows which parameters are
+  mutated.
+
+### Template
+
 ```cpp
 /** One-sentence summary (imperative mood: "Returns", "Registers",
  *  "Parses").
@@ -160,25 +284,24 @@ class Bar {};
  * Longer description only when the behaviour is non-obvious from the
  * signature and the brief.
  *
- * @param[in]  name      Description (omit only when unambiguous from type
- *                       alone, e.g. a single `bool enabled`).
+ * @param[in]  name      Identifier to resolve; must not be empty.
  * @param[out] result    Populated on success; left unmodified on failure.
  * @param[in,out] state  Read on entry; updated on return.
- * @return     What the return value represents; what false / null / empty
- *             signals (failure? not-found? no-op?).
- * @pre        Precondition not expressible in the type system -- e.g.
- *             "Must call Create() before this function."
+ * @return     The resolved Foo, or nullopt if `name` is not registered.
+ * @pre        Must call Create() before this function.
  * @note       Thread-safe. | Not thread-safe -- caller must hold m_Mutex.
  * @note       noexcept: terminates (via Assert / std::terminate) if the
  *             underlying <call> throws; this is intentional because [reason].
  * @see        RelatedFunction
  */
 [[nodiscard]] std::optional<Foo> TryResolve(std::string_view name) noexcept;
+
+/// Returns the current provider count.
+size_t GetProviderCount() const noexcept;
 ```
 
-**Omit `@param` when**: the parameter name + type together leave no ambiguity and the function has a clear brief. Never omit when the parameter has non-obvious directionality, units, or a null/empty contract.
-
-**Always include `@return`** when the return type is not `void` and the meaning of the return value is not fully captured by the function name and type.
+The single-line `///` form is appropriate for parameterless or trivially
+self-evident functions where no `@param` or `@return` tag is needed.
 
 ---
 
@@ -186,10 +309,15 @@ class Bar {};
 
 | Tier | Rule |
 |---|---|
+| **MUST** | Multi-line doc comment uses stacked `///` lines instead of `/** */`. The block form is the only correct multi-line doc form; stacked `///` defeats reflow, obscures block boundaries, and creates brief-vs-continuation ambiguity. |
 | **MUST** | Public declaration in a header (class, struct, free function, public method, enum, public constant) has no docblock — even when "obvious from name". The header is the contract; the next maintainer reads only the header. Narrow suppressions apply (see [What NOT to comment](#what-not-to-comment--suppress-list)). |
 | **MUST** | Public API whose semantics cannot be inferred from name + type alone (lifetime, ordering requirement, thread-safety, memory ownership) has no doc comment |
+| **MUST** | Public/reusable header function has undocumented parameters -- every parameter requires `@param[in\|out\|in,out]`. Narrow suppression: trivial getter/setter or single-parameter predicate where name + type leave zero ambiguity. |
+| **MUST** | Public/reusable header function has a non-void return with no `@return` tag. The tag must state what the value represents and what sentinel values (false, nullptr, nullopt, empty) signal. |
 | **MUST** | A comment directly contradicts the current code (stale comment) |
+| **MUST** | A comment, commit message body, or PR description destined for trunk contains a bare line-number reference to another file (`Foo.cpp:1037`, "around line 1037", "line ~1037"). Line numbers drift on any edit. Use the function name, class name, `@see` Doxygen tag, or a commit-pinned permalink instead. See [No bare line-number references in committed prose](#no-bare-line-number-references-in-committed-prose). |
 | **SHOULD** | A header carries one or more section-divider banner comments (`// ---- X ----`, `// === X ===`, etc.) — a symptom of multi-responsibility structure that should be a file split or a namespace / type grouping. Single banner separating co-located ADL-required specialisations is exempt. |
+| **SHOULD** | A file-level `@file` / `@brief` doc block sits after the `#include` list rather than immediately after `#pragma once` (or `#include "UnityPrefix.h"` in a `.cpp`). The block should surface the file's purpose before its dependencies; placement after includes forces the reader past 5-15 lines of includes to learn what the file is for, and many readers never reach it. Pre-existing Pattern-B files do not need to be flipped speculatively; new and substantially-edited files use Pattern A. |
 | **SHOULD** | An implementation-detail comment ("uses a hash map keyed by ...", "branch is faster on x86") sits in a header rather than in the `.cpp` — leaks coupling between contract and current implementation choice |
 | **SHOULD** | A class or struct has no brief (first doc-comment line) |
 | **SHOULD** | A raw-pointer member has no ownership annotation (owning / non-owning / optional-owning) |
@@ -197,9 +325,212 @@ class Bar {};
 | **SHOULD** | A `noexcept` function wraps a potentially-throwing call with no `@note` documenting the terminate-on-failure contract |
 | **SHOULD** | A `// TODO` or `// FIXME` has no `[TICKET-NNN]` tracker reference |
 | **SHOULD** | A `@pre` precondition is documented in prose but could instead be encoded in the type system (use the idiom-checklist ordering-contract rule) |
+| **SHOULD** | A cross-reference comment leads with a bare pointer (`// see Foo.h @file`, `/* per AGENTS.md ... */`, `@ref X` as the opening line) or carries only the pointer with no local gist. The reader of the consumer site is forced into a lateral jump to learn the local property the pointer is justifying. Reorder gist-first / pointer-last, or add a one-line gist if none exists. See [Cross-reference hygiene -- local gist before lateral pointer](#cross-reference-hygiene----local-gist-before-lateral-pointer). |
+| **SHOULD** | A comment at a consumer site re-documents a project-wide convention or invariant (static-init no-heap rule; engine container choice; `noexcept` terminate-on-throw policy; allocator-tag idioms; etc.). The convention belongs in **one** canonical place (project `AGENTS.md`, a contributing doc, the primitive's `@file` block, or an org overlay such as `unity-commenting.md`); restating it at every consumer teaches no new property and trains readers to expect the same paragraph elsewhere. Trim to a one-line pointer, or remove entirely when the choice is the only project-conforming option. See [Project-wide invariants belong in one canonical place](#project-wide-invariants-belong-in-one-canonical-place). |
+| **SHOULD** | A comment block within a function body exceeds ~8 non-blank lines, or a `/* */` block exceeds ~5 lines. Length is a signal, not a defect in itself: apply the **density test** to each sentence — could an expert C++ reader, familiar with the project's libraries and idioms, derive it from reading the code and its immediate vicinity? Candidates for removal: sentences restating what the code immediately below does (WHAT over WHY); descriptions of well-known standard library or API behaviour that the expert reader already knows (e.g. what `std::from_chars` guarantees on overflow, what `sscanf` does with a negative unsigned value); summary sentences that restate a point already made earlier in the same block. Worth keeping: the rationale for a non-obvious design choice (why `-` is intentionally rejected on unsigned `T` rather than wrapped); cross-file invariants (why two surfaces share the same whitespace predicate); concrete edge-case input examples that show the boundary being defended. Raise as **SHOULD** with a trimmed version. See [Example E](#example-e----verbose-inline-comment-block-should). |
 | **NICE** | `/** */` block used where a single `///` line would suffice |
 | **NICE** | Brief restates the function name verbatim ("Gets the foo" on `GetFoo()`) |
-| **NICE** | `@param` documents a parameter whose name + type already carry full meaning |
+| **NICE** | `@param` on a trivially self-evident parameter (suppression-eligible) adds noise -- prefer removing it |
+
+---
+
+## No bare line-number references in committed prose
+
+Comments, commit messages, PR descriptions, and `@see` tags destined for trunk **must not** contain bare line-number references to other files. Lines drift the moment any file is edited; a comment that says *"see `Foo.cpp` around line 1037"* is wrong on the next refactor and silently misleads every reader from then on.
+
+| Reference form | Stable? | Use it? |
+| --- | --- | --- |
+| `Foo.cpp` (filename only) | yes | yes |
+| `Foo::Bar()` (function name) | yes — survives moves within the file | yes |
+| `class Foo` / `struct Foo` (type name) | yes | yes |
+| `@see Foo::Bar` Doxygen tag | yes — tooling resolves the symbol | preferred |
+| Permalink to a commit-pinned line on a hosted repo | yes — frozen by SHA | yes, when a specific historical state matters |
+| `Foo.cpp:1037` / "around line 1037" / "line ~1037" in prose | **no** | **never in committed prose** |
+
+`Foo.cpp:1037` is fine in *findings reports* and *review comments* — they are tied to a specific state of the diff and are read once. It is **not** fine in code comments, commit message bodies, PR descriptions, or any artefact that lands on trunk.
+
+### Severity
+
+| Form | Severity |
+| --- | --- |
+| Bare line number in a header `@see` or doc comment that ships to trunk | **MUST** -- replace with function/class name or stable anchor |
+| Bare line number in a commit message body for a commit that ships to trunk | **MUST** -- amend if pre-publish, follow-up if post-comment |
+| Bare line number in a PR description | **SHOULD** -- the description is editable, swap to a stable anchor |
+| Bare line number in a review comment | -- (allowed; the comment is tied to the review state) |
+
+### Worked example
+
+```cpp
+// WRONG -- line number will drift
+/** ... The Editor re-inits BootConfig a second time from
+ *  ProjectSettings/boot.config (see Application.cpp around line 1037). */
+
+// CORRECT -- stable function-name anchor
+/** ... The Editor re-inits BootConfig a second time from
+ *  ProjectSettings/boot.config (see Application::ReloadBootConfig). */
+
+// CORRECT -- @see tag, tooling-resolvable
+/** ... The Editor re-inits BootConfig a second time from
+ *  ProjectSettings/boot.config.
+ *  @see Application::ReloadBootConfig */
+```
+
+If the cited site has no nameable function (e.g. an inline block in `main()`), promote it to a named helper as part of the change that needs to reference it. *"There's nowhere stable to point at"* is itself a finding -- raise the named-function refactor as a SHOULD rather than landing a line-number reference.
+
+---
+
+## Cross-reference hygiene -- local gist before lateral pointer
+
+When a rationale applies to two or more sites (a contract, an invariant, a lifetime guarantee, a threading discipline, a design trade-off), state it in **one canonical place** and reference it from each consumer. The canonical place is the upstream primitive's `@file` block, the shared header's class-level `@brief`, the project `AGENTS.md` clause, or a Doxygen `@section` anchor -- whichever is the "home" for the rationale. Do not duplicate the full prose at every consumer.
+
+Each consumer site then carries a **local one-line gist plus the pointer**:
+
+> **Gist first, pointer last.**
+
+The gist conveys the load-bearing local property so a reader can understand the local logic without taking the lateral jump. The pointer is for the reader who wants the full detail -- they would have followed it anyway. Both costs are paid; the gist is free.
+
+### Anti-pattern: bare pointer with no preceding gist
+
+```cpp
+// Lifetime, threading, and trivial-destructor contract: see
+// `LinkedRegistry.h` @file. Magic-statics make the `s_Global`
+// construction itself thread-safe; chain mutation is not, and
+// relies on BootConfig's single-threaded boot-time registration.
+```
+
+The opening sentence is the pure pointer. The reader hits *"Lifetime, threading, and trivial-destructor contract: see ..."* and is told *what kind* of comment this is and *where to look* -- but not *what the local property is*. The substantive gist is buried in sentences 2-4; a reader scanning the file may stop at the lateral-reference cue and never read the actual property.
+
+### Pattern: gist + pointer
+
+```cpp
+// Magic-statics make `s_Global` construction thread-safe; chain
+// mutation is single-threaded boot-time only, and the trivial
+// destructor keeps cross-TU node-destructor ordering safe.
+// Full lifetime / threading contract at the top of `LinkedRegistry.h`.
+```
+
+The reader takes away the three local properties (construction safety, mutation discipline, destructor reasoning) on the first read. The pointer is a one-line lead-out for the reader who wants the upstream contract in full. Same total length; better-ordered.
+
+### Pointer phrasing -- prefer plain English over pseudo-Doxygen suffixes
+
+The natural English form is *"at the top of `<file>`"* or *"in `<file>`'s file-scope doc"*. Avoid the trailing pseudo-markup form `<file> @file` (as in *"see `LinkedRegistry.h` @file"*) -- `@file` is a Doxygen command that *declares* a block as the file-level doc when placed inside that block; it does not work as a suffix-noun referring to such a block from elsewhere. The trailing-`@file` form does not resolve to anything in Doxygen, breaks the sentence's English cadence, and reads as cargo-cult markup.
+
+| Form | Verdict |
+| --- | --- |
+| *Full contract at the top of `LinkedRegistry.h`.* | OK -- plain English, points to where the `@file` block actually lives |
+| *Full contract in `LinkedRegistry.h`'s file-scope doc.* | OK -- equivalent phrasing |
+| `@see LinkedRegistry.h` (on its own line in a `/** */` block) | OK -- standard Doxygen `@see` resolves to the file's documentation page when the file carries an `@file` block |
+| *Full contract in `LinkedRegistry.h` @file.* | **wrong** -- pseudo-markup; `@file` is not a referring construct |
+| *see @file* (self-reference) | **wrong** -- same reason; use *"see the file-scope contract block above"* or drop the pointer entirely |
+
+### When pure pointers are fine
+
+Doxygen `@see` / `@sa` between **peer** declarations is a navigation aid, not a stand-in for rationale:
+
+```cpp
+/// @see RelatedType, SiblingFunction
+```
+
+That is navigation, not rationale. The rule fires when the pointer would have been a rationale comment in its full form.
+
+A single-line pointer is also fine when it follows immediately after a substantive doc block that already carries the gist -- e.g. a class-level `@brief` that fully establishes the contract, with a member function's `@note` saying *"see class-level brief for the lifetime contract"*. The gist already lives in the reader's immediate context, so the pointer alone closes the loop.
+
+### Detection signal
+
+A comment that opens with one of the following, with no preceding local content of its own:
+
+- *see `<other file or symbol>`*
+- *as documented in ...*
+- *per ...*
+- *for rationale ...*
+- *for detail ...*
+- *same as `<other site>`*
+- `@ref <anchor>` or `@see <anchor>` as the first content of the block (peer `@see` lists are exempt -- see above)
+
+Each is a pointer. If subsequent sentences in the same block carry the load-bearing local content, **reorder**: gist first, pointer last. If no subsequent sentences carry local content, **add a one-line gist** -- the link alone is insufficient.
+
+### Severity
+
+| Form | Severity |
+| --- | --- |
+| Comment whose entire content is a bare pointer to another file (`// see Foo.h @file`) with no local gist | **SHOULD** -- add a one-line gist of the local property the pointer is justifying |
+| Comment that opens with a pointer and buries the gist later in the same block | **SHOULD** -- reorder gist-first, pointer-last |
+| Comment with gist before pointer (the pattern) | -- no finding |
+| Doxygen `@see` / `@sa` listing peer declarations | -- no finding (navigation aid) |
+
+### Worked example
+
+```cpp
+// WRONG -- bare pointer leads; reader must lateral-jump to learn the local property
+/** Process-wide registry.
+ *  See lifetime contract at the top of `LinkedRegistry.h`.
+ *  Function-local static; magic-statics handle construction.
+ */
+
+// CORRECT -- gist leads; pointer is the lead-out for detail-hungry readers
+/** Process-wide registry. Function-local static; magic-statics
+ *  guarantee thread-safe lazy construction. Destruction-order
+ *  concerns are sidestepped by keeping the destructor trivial --
+ *  full lifetime contract at the top of `LinkedRegistry.h`.
+ */
+```
+
+The wrong form pays the lateral-jump cost on every read; the correct form pays it only when the reader wants the full upstream rationale, which is precisely the reader the pointer is there to serve.
+
+Both examples above use plain English (*"at the top of `LinkedRegistry.h`"*); avoid the pseudo-Doxygen suffix form *"in `LinkedRegistry.h` @file"* described in the previous subsection.
+
+---
+
+## Project-wide invariants belong in one canonical place
+
+When the codebase has a project-wide convention or invariant -- a rule that holds at every site of the same shape, not just this one -- documenting that convention *at the consumer site* is duplication. The convention belongs in **one** canonical place: the project `AGENTS.md`, a contributing doc, an `@file` block on the primitive that enforces the rule, an org overlay such as `unity-commenting.md`, or a Doxygen `@section` anchor. Each consumer should not carry its own restatement of the rule -- a reader trained by one such restatement starts expecting the same paragraph at every consumer of the same convention, and the cumulative tax across the codebase is real.
+
+This is a distinct finding from the cross-reference hygiene rule: that rule says when you *do* cross-reference, lead with the gist. **This** rule says you often do not need a comment at the consumer at all -- the choice flows from a project-wide convention and is the only conforming option, so the absence of a comment is itself project-conforming.
+
+### Signature shape
+
+- An *implementation choice* at the consumer that is **the only project-conforming option** for that slot (the rule leaves no genuine choice to make), and
+- A comment whose body **explains the rule itself** as if the reader had not internalised it.
+
+When both hold, the comment is restating project-wide convention. Trim it.
+
+### Detection signal
+
+A multi-line comment block at a static-lifetime object, a `noexcept` function, a `core::vector` / `core::array_ref` declaration, an `Assert*` site, an allocator-tag selection, or any other slot governed by a project-wide rule, where:
+
+1. The body of the comment *explains the rule*, not a local property.
+2. Removing the comment would not change a project-experienced reader's understanding of why the choice was made.
+3. The same paragraph could be copy-pasted, verbatim, to every other consumer of the same rule without losing accuracy. **This is the test.** If the answer is yes, the paragraph belongs upstream, not here.
+
+### Exception -- consumer-specific interactions
+
+A consumer site may carry a *specific* property the convention does not cover -- a non-obvious interaction between the convention and this particular consumer's needs (a non-default allocator tag justified by this consumer's lifetime pattern; a `noexcept` whose terminate-mode is load-bearing for *this* call site's invariants; a fixed-capacity choice driven by this consumer's bounded input). That property is worth a comment. The boundary is still the copy-paste test: if the property is *specific to this site*, it stays; if it is *the rule itself*, it goes.
+
+### Severity
+
+**SHOULD** -- trim to a one-line pointer or remove entirely, depending on the convention's visibility. If the rule is not documented in a canonical place yet, add it there as part of the same change rather than landing it inline at the consumer.
+
+### Worked example
+
+```cpp
+// WRONG -- re-documents the project-wide static-init invariant at one consumer
+// `-forceFullStacktrace` accepts a list of LogType-name tokens; the token
+// table is enumerated from `LogTypeToString` so the spelling stays in
+// lockstep with the enum's own stringifier. Backed by `std::array` so the
+// storage is part of the static object rather than a heap allocation --
+// `s_ForceFullStacktrace` below is a TU-static whose constructor runs
+// during dynamic initialisation, before `MemoryManager` is fully up, so
+// a `core::vector` here would crash on the first allocation.
+
+// CORRECT -- keeps only the consumer-specific WHY (lockstep with stringifier)
+// `-forceFullStacktrace` accepts a list of LogType-name tokens; the token
+// table is enumerated from `LogTypeToString` so the spelling stays in
+// lockstep with the enum's own stringifier.
+```
+
+The dropped paragraph is the project-wide rule: every TU-static in the engine is subject to the MemoryManager-not-ready-during-dynamic-init constraint. Documenting that constraint at one site teaches no new property -- the choice of `std::array` over `core::vector` is the only conforming option for any TU-static of this shape, and the rule lives once in the engine's static-init documentation. The kept paragraph is what the *next* maintainer cannot infer from the language or the project conventions alone: the token list is intentionally enumerated from the enum's stringifier so the two stay in lockstep.
+
+The copy-paste test confirms the split: the dropped paragraph would apply verbatim to `s_ApiProfile`, `s_OverrideTextureCompression`, `s_StackTraceLogType`, and every other TU-static `MappedParameter` in the same translation unit. The kept paragraph would not -- it is specific to this consumer's token-table construction.
 
 ---
 
@@ -268,6 +599,104 @@ N. [SHOULD] Modules/Baz/BazProvider.h:44 -- `GetCurrentBaz()` is marked
       *       intentional -- "what resolver am I?" cannot be meaningfully
       *       handled by a caller.
       */
+```
+
+### Example D -- undocumented parameters on public API (MUST)
+
+```text
+N. [MUST] Module/Net/ConnectionPool.h:63 -- `Acquire(StringView tag,
+   Duration timeout)` is a public header function with two parameters and
+   no `@param` tags. A caller cannot tell from the signature what `tag`
+   identifies, whether `timeout` is wall-clock or monotonic, or what
+   happens on timeout (nullptr? exception? assert?).
+   Evidence: cpp-commenting.md MUST rule: "Public/reusable header function
+             has undocumented parameters".
+   Suggested:
+     /** Acquires a pooled connection matching `tag`.
+      *
+      * Blocks the calling thread until a connection is available or
+      * `timeout` elapses.
+      *
+      * @param[in] tag      Logical pool partition to acquire from; must
+      *                     not be empty.
+      * @param[in] timeout  Maximum wall-clock wait. Pass Duration::Zero()
+      *                     for a non-blocking attempt.
+      * @return A live connection, or nullptr if `timeout` elapsed.
+      */
+```
+
+---
+
+### Example E — verbose inline comment block (SHOULD)
+
+A template function body has a `// ...` block of ~22 lines explaining the integer parse path,
+covering: the two input paths (boot.config vs command-line), the `+` sign handling, the `-`
+rejection on unsigned types, `std::from_chars` error semantics, and whitespace policy alignment
+with another TU's tokeniser.
+
+```text
+N. [SHOULD] NativeKernel/Bootstrap/BootConfigParameterData.h:<line> --
+   the `// Boot config integer values reach this parser through two paths` block
+   runs to ~22 lines for ~15 lines of `std::from_chars` setup; several sentences
+   describe standard library behaviour an expert reader already knows.
+   Evidence: cpp-commenting.md SHOULD rule (verbose-comment heuristic): density test
+             fails on three sentence groups:
+               (a) "std::from_chars itself remains strict on the trimmed window:
+                   locale-independent, explicit overflow via std::errc::result_out_of_range,
+                   and partial parses rejected via result.ptr != last" -- describes
+                   documented std::from_chars behaviour; adds nothing the reader would
+                   not check in cppreference.
+               (b) "The parser accepts that wider input shape (skip leading whitespace,
+                   skip one optional '+', trim trailing whitespace)" -- restates what
+                   the six lines of code immediately below this comment do.
+               (c) "falling back to the configured default is the safer behaviour for
+                   boot config integers" -- summary of the preceding `-` rejection
+                   rationale; redundant.
+             The non-obvious parts worth keeping:
+               - the two-path context (boot.config lines are pre-trimmed; command-line
+                 tokens arrive verbatim with inner whitespace and '+' prefixes);
+               - why `-` on an unsigned type is intentionally rejected (from_chars
+                 is strict; the old sscanf path silently wrapped to a large positive);
+               - why both surfaces use `IsBlank` (one predicate ensures a value that
+                 survives the tokeniser cannot be re-rejected here for a different
+                 whitespace definition).
+   Suggested trimmed block (~8 lines):
+     // Integer values reach this parser through two paths:
+     //   boot.config lines are trimmed by InitFromString before arrival;
+     //   command-line tokens (e.g. `-gc-helper-count " 4 "`) arrive verbatim with
+     //   inner whitespace and optional `+` prefixes.
+     // We therefore strip leading/trailing whitespace and one leading `+` before
+     // calling from_chars, so both surfaces share one acceptance policy.
+     // A leading `-` on unsigned T is intentionally rejected: from_chars is strict
+     // where sscanf would wrap to a large positive; defaulting is the safer choice.
+     // Whitespace: both surfaces call IsBlank (POSIX-style: ' ' and '\t' only),
+     // so a value that clears the tokeniser cannot be re-rejected here.
+```
+
+### Example F -- consumer-site restating of a project-wide invariant (SHOULD)
+
+A TU-static `MappedParameter` carries a 7-line comment whose lower half explains the engine's static-init no-heap-allocation rule. The comment is at one consumer; the rule applies to every TU-static of the same shape.
+
+```text
+N. [SHOULD] Runtime/Logging/LogAssertExtended.cpp:<line> -- the comment block
+   on `GetForceFullStacktraceMappings()` restates the engine's project-wide
+   static-init invariant ("`s_ForceFullStacktrace` is a TU-static whose
+   constructor runs during dynamic initialisation, before `MemoryManager`
+   is fully up, so a `core::vector` here would crash on the first
+   allocation") at this one consumer.
+   Evidence: cpp-commenting.md SHOULD rule (project-wide invariants belong
+             in one canonical place); the lower half of the comment passes
+             the copy-paste test -- it would apply verbatim to every other
+             TU-static `MappedParameter` in this translation unit
+             (`s_ApiProfile`, `s_OverrideTextureCompression`,
+             `s_StackTraceLogType`).
+             The upper half is consumer-specific (token table enumerated
+             from `LogTypeToString` for lockstep with the enum's own
+             stringifier) and stays.
+   Suggested trimmed block (3 lines):
+     // `-forceFullStacktrace` accepts a list of LogType-name tokens; the token
+     // table is enumerated from `LogTypeToString` so the spelling stays in
+     // lockstep with the enum's own stringifier.
 ```
 
 ---
