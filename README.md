@@ -2,7 +2,7 @@
 
 AI agent personas for C++17 development, for use with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Cursor](https://cursor.com).
 
-**cpp-write** authors to standard before you start. **cpp-review** catches L0--L3 issues in code diffs and design plans. **cpp-simplify** rewrites from findings. **cpp-project-init** bootstraps a new project. Shared C++17 reference material (modernisation, idioms, commenting hygiene, anti-patterns) is loaded by all four.
+**cpp-write** authors to standard before you start. **cpp-review** catches L0--L3 issues in code diffs and design plans. **cpp-simplify** rewrites from findings. **cpp-project-init** bootstraps a new project. **cpp-pr** writes Slack-correct posts about PRs (pull-requests / public-relations). Shared C++17 reference material (modernisation, idioms, commenting hygiene, anti-patterns) is loaded by all four code-touching skills.
 
 ---
 
@@ -14,6 +14,7 @@ AI agent personas for C++17 development, for use with [Claude Code](https://docs
 | **cpp-review** | After substantive C++ changes | L0--L3 layered design review: intent, structural/boundary, API contract, implementation. Also supports **plan review mode** -- catch issues in a design document before any code is written |
 | **cpp-simplify** | After L0/L1 MUST findings from cpp-review | Applies the Rewrite Brief from cpp-review to rewrite the commit cleanly |
 | **cpp-project-init** | Once per new project | Stamps `.cursor/rules/cpp-standards.mdc`, a `## C++ Skills` section in `AGENTS.md`, and a base `.clang-tidy` into the project |
+| **cpp-pr** | When announcing PRs / stacks in Slack -- channel or DM | Produces Slack-mrkdwn-correct copy in a fenced text block ready to paste verbatim; audience-aware (channel vs DM); covers PR-stack announcements, single-PR review asks, merged-PR celebrations, and stack status updates |
 
 Shared reference material in `cpp/references/` is loaded by all four skills:
 
