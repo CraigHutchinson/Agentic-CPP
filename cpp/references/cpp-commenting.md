@@ -327,6 +327,9 @@ self-evident functions where no `@param` or `@return` tag is needed.
 | **SHOULD** | A `@pre` precondition is documented in prose but could instead be encoded in the type system (use the idiom-checklist ordering-contract rule) |
 | **SHOULD** | A cross-reference comment leads with a bare pointer (`// see Foo.h @file`, `/* per AGENTS.md ... */`, `@ref X` as the opening line) or carries only the pointer with no local gist. The reader of the consumer site is forced into a lateral jump to learn the local property the pointer is justifying. Reorder gist-first / pointer-last, or add a one-line gist if none exists. See [Cross-reference hygiene -- local gist before lateral pointer](#cross-reference-hygiene----local-gist-before-lateral-pointer). |
 | **SHOULD** | A comment at a consumer site re-documents a project-wide convention or invariant (static-init no-heap rule; engine container choice; `noexcept` terminate-on-throw policy; allocator-tag idioms; etc.). The convention belongs in **one** canonical place (project `AGENTS.md`, a contributing doc, the primitive's `@file` block, or an org overlay such as `unity-commenting.md`); restating it at every consumer teaches no new property and trains readers to expect the same paragraph elsewhere. Trim to a one-line pointer, or remove entirely when the choice is the only project-conforming option. See [Project-wide invariants belong in one canonical place](#project-wide-invariants-belong-in-one-canonical-place). |
+| **SHOULD** | A breadcrumb comment (cross-file sequencing, callback priority, boot-time ordering, static-init dependency) re-derives the priority value, the registration/sort mechanism, the standard semantics of `numeric_limits::min`, or the platform-mains call sequence — facts an expert reader gets by following the named anchor functions and reading the upstream primitive. Name the off-screen anchors (functions, files, types) and stop. See [Breadcrumb comments — name the anchor, do not re-derive](#breadcrumb-comments--name-the-anchor-do-not-re-derive). |
+| **SHOULD** | A `//` body comment block of two or more lines carries only one load-bearing fact -- subsequent lines are paraphrase, pointer-tail (*"see also ..."*), or sibling-consequence the reader does not need to follow the local code. Multi-line shape implies multi-fact density; collapsing to a single line preserves the signal and reduces visual weight. Exception: hard-wrap when the single line genuinely exceeds the project column limit. See [One-liner viability -- collapse when the load-bearing fact fits](#one-liner-viability----collapse-when-the-load-bearing-fact-fits). |
+| **SHOULD** | A preamble comment justifies *why* statement X exists when X's consumer is within ~5 non-blank lines (same scroll viewport, no scrolling required to see both). The reader will reach the consumer before they need the justification; the comment teaches what the code is about to show. Remove the preamble; surface any non-local property at the destination it actually documents (the producer's header, or the consumer's call site). See [Local-use-proves-purpose -- don't preamble code the reader will see immediately](#local-use-proves-purpose----dont-preamble-code-the-reader-will-see-immediately). |
 | **SHOULD** | A comment block within a function body exceeds ~8 non-blank lines, or a `/* */` block exceeds ~5 lines. Length is a signal, not a defect in itself: apply the **density test** to each sentence — could an expert C++ reader, familiar with the project's libraries and idioms, derive it from reading the code and its immediate vicinity? Candidates for removal: sentences restating what the code immediately below does (WHAT over WHY); descriptions of well-known standard library or API behaviour that the expert reader already knows (e.g. what `std::from_chars` guarantees on overflow, what `sscanf` does with a negative unsigned value); summary sentences that restate a point already made earlier in the same block. Worth keeping: the rationale for a non-obvious design choice (why `-` is intentionally rejected on unsigned `T` rather than wrapped); cross-file invariants (why two surfaces share the same whitespace predicate); concrete edge-case input examples that show the boundary being defended. Raise as **SHOULD** with a trimmed version. See [Example E](#example-e----verbose-inline-comment-block-should). |
 | **NICE** | `/** */` block used where a single `///` line would suffice |
 | **NICE** | Brief restates the function name verbatim ("Gets the foo" on `GetFoo()`) |
@@ -481,6 +484,65 @@ Both examples above use plain English (*"at the top of `LinkedRegistry.h`"*); av
 
 ---
 
+## Breadcrumb comments — name the anchor, do not re-derive
+
+A *breadcrumb* comment surfaces a dependency the reader cannot see locally — a cross-file sequencing constraint, a platform-mains call order, a callback-priority ordering that determines when a function fires, an interaction with a later boot phase. The dependency is real and worth recording; the local code shows only the consequence (the `RegisterRuntimeInitializeAndCleanup` line, the priority literal, the registration object).
+
+The rule: a breadcrumb comment **names the off-screen anchors** — functions, files, types — and stops. An expert C++ reader, given the names of the upstream functions, the local signature, and the surrounding registration mechanism, can derive the *mechanism* in under a minute by following the anchor. The comment should not do that derivation for them.
+
+This is a sibling of [Cross-reference hygiene — local gist before lateral pointer](#cross-reference-hygiene----local-gist-before-lateral-pointer) — that rule is about **format** (gist first, pointer last). This rule is about **content** (name the anchor; do not re-explain what following it would reveal).
+
+### Signature shape
+
+- A registration or call site whose timing/ordering matters in ways the local declaration alone cannot convey, **and**
+- A comment whose body **explains the priority value, the registration/sort discipline, the standard meaning of a library construct, or the platform-mains call sequence** — facts derivable by following one or two named anchors.
+
+When both hold, the comment is over-deriving. Trim to the anchor names.
+
+### Detection signal
+
+A multi-line comment on a boot-time registration, a callback-priority site, a static-init constructor, or a cross-platform sequencing dependency, where:
+
+1. The comment names the relevant off-screen anchor(s) (good).
+2. The comment also restates what the priority value means, what the sort discipline does, what `std::numeric_limits<int>::min()` is, what the registration class invokes, or how the platform mains are structured (bad — derivable from the anchor).
+3. A reader who knew the anchor functions and read each for one minute would gain nothing from the restated content.
+
+The **anchor-derivation test**: if every sentence in the comment could be reconstructed by reading the named functions/types it points at, the comment is doing the reader's follow-up for them. Keep only sentences that hold *additional* properties (a consumer-specific quirk, a behavioural sentinel, an interaction with a sibling component the anchors do not document).
+
+### Exception — consumer-specific interactions
+
+A breadcrumb site may carry a specific property the anchors do not cover — e.g. *"the editor's later `BootConfig::InitFromString` (project boot.config) is not picked up"* is not visible from following `AutoInitializeAndCleanupRuntime`; it is a property of *this* callback's timing relative to a *later* boot phase. That property is worth recording. The boundary is the anchor-derivation test: if the property is *specific to this site and its relationship to a later/earlier phase*, it stays; if it is *the mechanism the anchor itself implements*, it goes.
+
+### Severity
+
+**SHOULD** — trim to one or two lines that name the anchors and stop. Keep only properties that are *not* derivable from the named anchors plus the local code.
+
+### Worked example
+
+```cpp
+// WRONG — re-derives what the named anchors already encode
+// Sequencing: priority `numeric_limits<int>::min()` runs this first among
+// `RegisterRuntimeInitializeAndCleanup` callbacks. Platform mains call
+// `SetupArgv` then `BootConfig::Init(argv)` before constructing
+// `AutoInitializeAndCleanupRuntime`, so the global config is populated by
+// the time this fires. The editor's later `BootConfig::InitFromString`
+// (project boot.config) is not picked up — this matches the pre-migration
+// `HasARGV` behaviour, which only saw the command line.
+static RegisterRuntimeInitializeAndCleanup s_SetupStacktraceTypes(
+    SetupStacktraceTypes, nullptr, std::numeric_limits<int>::min());
+
+// CORRECT — names the off-screen anchors and stops; reader follows them for detail
+// Sequencing: invoked via `AutoInitializeAndCleanupRuntime`, which platform
+// mains construct after `SetupArgv` + `BootConfig::Init(argv)`. The editor's
+// later `BootConfig::InitFromString` (project boot.config) is not picked up.
+static RegisterRuntimeInitializeAndCleanup s_SetupStacktraceTypes(
+    SetupStacktraceTypes, nullptr, std::numeric_limits<int>::min());
+```
+
+The dropped sentences re-derived facts the reader gets by following the named anchors: that `numeric_limits<int>::min()` orders this first follows from `RegisterRuntimeInitializeAndCleanup::Sort`'s lower-order-first discipline; that the global config is populated by the time this fires follows from reading either platform `main` for the call order. The kept paragraph names the three anchor functions that together pin the sequencing, plus the one property — the later editor `InitFromString` not feeding this callback — that the reader cannot derive by following any single anchor.
+
+---
+
 ## Project-wide invariants belong in one canonical place
 
 When the codebase has a project-wide convention or invariant -- a rule that holds at every site of the same shape, not just this one -- documenting that convention *at the consumer site* is duplication. The convention belongs in **one** canonical place: the project `AGENTS.md`, a contributing doc, an `@file` block on the primitive that enforces the rule, an org overlay such as `unity-commenting.md`, or a Doxygen `@section` anchor. Each consumer should not carry its own restatement of the rule -- a reader trained by one such restatement starts expecting the same paragraph at every consumer of the same convention, and the cumulative tax across the codebase is real.
@@ -531,6 +593,105 @@ A consumer site may carry a *specific* property the convention does not cover --
 The dropped paragraph is the project-wide rule: every TU-static in the engine is subject to the MemoryManager-not-ready-during-dynamic-init constraint. Documenting that constraint at one site teaches no new property -- the choice of `std::array` over `core::vector` is the only conforming option for any TU-static of this shape, and the rule lives once in the engine's static-init documentation. The kept paragraph is what the *next* maintainer cannot infer from the language or the project conventions alone: the token list is intentionally enumerated from the enum's stringifier so the two stay in lockstep.
 
 The copy-paste test confirms the split: the dropped paragraph would apply verbatim to `s_ApiProfile`, `s_OverrideTextureCompression`, `s_StackTraceLogType`, and every other TU-static `MappedParameter` in the same translation unit. The kept paragraph would not -- it is specific to this consumer's token-table construction.
+
+---
+
+## One-liner viability -- collapse when the load-bearing fact fits
+
+When the load-bearing content of a `//` body comment is a **single fact** -- a one-sentence sequencing constraint, a brief WHY, a single contract claim -- it must be written as a single comment line. Multi-line `// // //` blocks that wrap to a second or third line "for readability" but carry only one fact dilute the signal: a reader scanning a function sees a three-line block and expects three facts; finding two of those lines to be paraphrase, pointer-tail, or sibling-consequence is friction. The same fact in one line carries less visual weight, fits more code into the same viewport, and reads in a single glance.
+
+Length is a signal, not a defect in itself. A single-fact `//` line that genuinely exceeds the project column limit (typically 100-120 chars) should hard-wrap to two lines -- that is not the smell. The smell is the *multi-fact appearance* on what is really one fact stretched across lines.
+
+This is a sibling of the verbose-comment heuristic (the ~8-line SHOULD): that rule fires on *long* blocks where the density test removes derivable sentences; **this** rule fires on *short* blocks (2-3 lines) whose entire content was a single fact to begin with.
+
+### Signature shape
+
+- A `//` comment block of 2-3 lines, **and**
+- Each sentence after the first either paraphrases the first, adds a non-load-bearing cross-reference pointer-tail (*"see also ..."*), or names a sibling consequence that the reader does not need to know to follow the local code.
+
+### Detection signal
+
+A `// X` / `// Y` / `// Z` block where:
+
+1. Sentence X states the load-bearing fact.
+2. Sentences Y, Z are paraphrase (*"so that ..."*), pointer-tail (*"see also ..."*, *"documented in ..."*), or sibling-consequence (*"which means ..."*).
+3. A reader who saw only X would understand the local code with no loss.
+
+### Severity
+
+**SHOULD** -- trim to a single line.
+
+### Worked example
+
+```cpp
+// WRONG -- three lines for one fact
+// Sequencing: AutoInit must follow SetupArgv + BootConfig::Init so the
+// runtime-initialize callback list (e.g. SetupStacktraceTypes) sees
+// populated state. See the @file block in NativeKernel/Bootstrap/BootConfig.h.
+AutoInitializeAndCleanupRuntime autoInit;
+
+// CORRECT -- one line, same load-bearing content
+// Sequencing: AutoInit shall be after SetupArgv + BootConfig::Init.
+AutoInitializeAndCleanupRuntime autoInit;
+```
+
+Sentence 1 (*"AutoInit must follow SetupArgv + BootConfig::Init"*) is the load-bearing fact. Sentence 2 (*"so the callback list sees populated state"*) re-derives mechanism the named anchors already encode -- also a breadcrumb-rule SHOULD on its own. Sentence 3 (*"See the @file block in ..."*) is a bare pointer-tail; the reader who wants the mechanism follows `BootConfig::Init` to its header by name. The single-line form keeps the only fact a reader needs to understand the local code: this construction is ordered relative to the two preceding calls.
+
+---
+
+## Local-use-proves-purpose -- don't preamble code the reader will see immediately
+
+A preamble comment that justifies *why* statement X exists is redundant when X's consumer is within a short scroll distance of X -- typically ~5 non-blank statements, or one screen of code without scrolling. A reader walking the function top-to-bottom does not need the comment to tell them *why* `LocateDataFolder()` runs first: the very next non-blank line uses `GetDataFolder()`. The comment is teaching what the code is about to show.
+
+Length is not the criterion -- even a single-line preamble that re-narrates an immediate use is noise. The criterion is **spatial proximity**: when producer and consumer share a viewport, the consumer documents the producer. The preamble's only legitimate role is when the consumer is *far away* (a different function, a different file, a cross-platform boundary) and the local reader would not see it.
+
+This is distinct from the breadcrumb-comment rule -- breadcrumb fires when the comment names *off-screen* anchors and re-derives what following them would reveal. **This** rule fires when the comment narrates *on-screen* code that follows in the same scroll viewport. Both can be present together on the same block.
+
+### Signature shape
+
+- A comment immediately preceding a producer statement (an init call, a cache primer, a flag set), **and**
+- The consumer of that producer's output appears within ~5 non-blank lines, **and**
+- The comment's content is exhausted by the producer name + the consumer's existence.
+
+### Detection signal
+
+A comment whose body has the shape:
+
+- *"X is done first so Y can ..."*
+- *"set up X here for the Y below"*
+- *"X is required before Y ..."*
+- *"resolve X before the Z call so ..."*
+
+where Y / Z is visibly present in the same function within ~5 statements of X.
+
+### Severity
+
+**SHOULD** -- remove. If the comment carries a *non-local* property (cross-file constraint, platform-specific gotcha, lifetime contract) move that property to the destination it actually documents -- usually the producer's header or the consumer's call site.
+
+### Worked example
+
+```cpp
+// WRONG -- preamble re-narrates immediate uses
+// Resolve bundle + data paths before AutoInit so the chdir below and
+// the BootConfig::InitFromFileFormatted call can see them. Contract
+// and constraints documented at the top of OSXPlayer/Bootstrap.h.
+osxplayer_bootstrap::LocateApplicationFolder();
+osxplayer_bootstrap::LocateDataFolder(argc, (const char* const*)argv);
+
+[[NSFileManager defaultManager]changeCurrentDirectoryPath:
+    [NSString stringWithUTF8String: osxplayer_bootstrap::GetApplicationFolder()]];
+if (!BootConfig::InitFromFileFormatted(..., osxplayer_bootstrap::GetDataFolder(), ...))
+
+// CORRECT -- no preamble; GetApplicationFolder / GetDataFolder use sites are the documentation
+osxplayer_bootstrap::LocateApplicationFolder();
+osxplayer_bootstrap::LocateDataFolder(argc, (const char* const*)argv);
+
+[[NSFileManager defaultManager]changeCurrentDirectoryPath:
+    [NSString stringWithUTF8String: osxplayer_bootstrap::GetApplicationFolder()]];
+if (!BootConfig::InitFromFileFormatted(..., osxplayer_bootstrap::GetDataFolder(), ...))
+```
+
+The contract that the resolve calls run pre-AutoInit lives in `Bootstrap.h`'s `@file` block -- the canonical home for the constraint. The reader walking `main()` learns the *what* by reading three statements; they learn the *why* (pre-AutoInit safety) only if they need to, by following `LocateDataFolder` into `Bootstrap.h`.
 
 ---
 
@@ -697,6 +858,35 @@ N. [SHOULD] Runtime/Logging/LogAssertExtended.cpp:<line> -- the comment block
      // `-forceFullStacktrace` accepts a list of LogType-name tokens; the token
      // table is enumerated from `LogTypeToString` so the spelling stays in
      // lockstep with the enum's own stringifier.
+```
+
+### Example G -- breadcrumb comment that re-derives the mechanism (SHOULD)
+
+A boot-time `RegisterRuntimeInitializeAndCleanup` registration carries a 7-line comment whose middle paragraph re-explains the priority/sort discipline that lives in the registration class itself.
+
+```text
+N. [SHOULD] Runtime/Logging/LogAssertExtended.cpp:<line> -- the comment on
+   `s_SetupStacktraceTypes` re-derives mechanism that an expert reader gets
+   by following the named anchor functions:
+     * "priority `numeric_limits<int>::min()` runs this first" -- derivable
+       from `RegisterRuntimeInitializeAndCleanup::Sort` (lower-order first);
+       no new information at the call site.
+     * "Platform mains call `SetupArgv` then `BootConfig::Init(argv)` before
+       constructing `AutoInitializeAndCleanupRuntime`" -- visible by reading
+       one platform `main` (e.g. `WinEditorMain.cpp`).
+     * "this matches the pre-migration `HasARGV` behaviour" -- git-blame
+       narrative, not a current-code property.
+   What stays: the editor's later `BootConfig::InitFromString` (project
+   boot.config) not feeding this callback -- that property is not visible
+   from any single anchor and is consumer-specific.
+   Evidence: cpp-commenting.md SHOULD rule (breadcrumb comments -- name the
+             anchor, do not re-derive); anchor-derivation test fails on
+             three of four sentences.
+   Suggested trimmed block (3 lines):
+     // Sequencing: invoked via `AutoInitializeAndCleanupRuntime`, which
+     // platform mains construct after `SetupArgv` + `BootConfig::Init(argv)`.
+     // The editor's later `BootConfig::InitFromString` (project boot.config)
+     // is not picked up.
 ```
 
 ---
