@@ -330,6 +330,9 @@ self-evident functions where no `@param` or `@return` tag is needed.
 | **SHOULD** | A breadcrumb comment (cross-file sequencing, callback priority, boot-time ordering, static-init dependency) re-derives the priority value, the registration/sort mechanism, the standard semantics of `numeric_limits::min`, or the platform-mains call sequence — facts an expert reader gets by following the named anchor functions and reading the upstream primitive. Name the off-screen anchors (functions, files, types) and stop. See [Breadcrumb comments — name the anchor, do not re-derive](#breadcrumb-comments--name-the-anchor-do-not-re-derive). |
 | **SHOULD** | A `//` body comment block of two or more lines carries only one load-bearing fact -- subsequent lines are paraphrase, pointer-tail (*"see also ..."*), or sibling-consequence the reader does not need to follow the local code. Multi-line shape implies multi-fact density; collapsing to a single line preserves the signal and reduces visual weight. Exception: hard-wrap when the single line genuinely exceeds the project column limit. See [One-liner viability -- collapse when the load-bearing fact fits](#one-liner-viability----collapse-when-the-load-bearing-fact-fits). |
 | **SHOULD** | A preamble comment justifies *why* statement X exists when X's consumer is within ~5 non-blank lines (same scroll viewport, no scrolling required to see both). The reader will reach the consumer before they need the justification; the comment teaches what the code is about to show. Remove the preamble; surface any non-local property at the destination it actually documents (the producer's header, or the consumer's call site). See [Local-use-proves-purpose -- don't preamble code the reader will see immediately](#local-use-proves-purpose----dont-preamble-code-the-reader-will-see-immediately). |
+| **SHOULD** | A class, struct, or namespace docblock contains prose that paraphrases content already asserted by one or more of its own members' docblocks (member brief, member detail, `///<` trailing annotation, nested-type docblock). The type docblock should retain only the @brief, type-level purpose / canonical-example prose, type-level invariants that span ≥2 members, and `@section` content referenced by ≥2 members. Move overlapping sentences to the member that owns them, or delete the type-level copy when the member's wording is already adequate. See [Type docblock — explain the type, not its members](#type-docblock--explain-the-type-not-its-members). |
+| **SHOULD** | A Doxygen `@section` or `@anchor` has exactly **one** `@ref` consumer in the file (or module, for primitive `@file` anchors). The anchor's content moves to the single consumer; the anchor declaration and the `@ref` are both deleted. Single-consumer anchors do not earn the upward lateral jump they impose on every reader of the consumer. See [`@section` and `@anchor` — earn the indirection with ≥2 consumers](#section-and-anchor--earn-the-indirection-with-2-consumers). |
+| **MUST** | A Doxygen `@section` or `@anchor` has **zero** `@ref` consumers — the anchor is dead. Either a `@ref` was removed without cleaning up, or the anchor was speculative. Delete the anchor and any content framing it justified. See [`@section` and `@anchor` — earn the indirection with ≥2 consumers](#section-and-anchor--earn-the-indirection-with-2-consumers). |
 | **SHOULD** | A comment block within a function body exceeds ~8 non-blank lines, or a `/* */` block exceeds ~5 lines. Length is a signal, not a defect in itself: apply the **density test** to each sentence — could an expert C++ reader, familiar with the project's libraries and idioms, derive it from reading the code and its immediate vicinity? Candidates for removal: sentences restating what the code immediately below does (WHAT over WHY); descriptions of well-known standard library or API behaviour that the expert reader already knows (e.g. what `std::from_chars` guarantees on overflow, what `sscanf` does with a negative unsigned value); summary sentences that restate a point already made earlier in the same block. Worth keeping: the rationale for a non-obvious design choice (why `-` is intentionally rejected on unsigned `T` rather than wrapped); cross-file invariants (why two surfaces share the same whitespace predicate); concrete edge-case input examples that show the boundary being defended. Raise as **SHOULD** with a trimmed version. See [Example E](#example-e----verbose-inline-comment-block-should). |
 | **NICE** | `/** */` block used where a single `///` line would suffice |
 | **NICE** | Brief restates the function name verbatim ("Gets the foo" on `GetFoo()`) |
@@ -695,6 +698,109 @@ The contract that the resolve calls run pre-AutoInit lives in `Bootstrap.h`'s `@
 
 ---
 
+## Type docblock — explain the type, not its members
+
+A class, struct, or namespace docblock that synthesises what its own members' docblocks already say is duplication. The reader walking the file top-to-bottom encounters the type's docblock first, then the members; if the type docblock tells me "reads expose a `ValueRange` whose iterator yields one `Entry` per occurrence in source order with per-element parse outcome", and `Values()`'s own docblock then says exactly the same thing, one of the two pays its weight and the other is noise. The right home is the member docblock — it sits next to the code that implements the claim, sticks to that one entity, and renders in the API docs at the right place.
+
+The type docblock should hold **only** content that has no natural home on any single member:
+
+- The **@brief** — one sentence stating what role the type plays in the system.
+- **Purpose / canonical-example prose** that frames *what kinds of problems* the type solves (a `-forceFullStacktrace LogA -forceFullStacktrace LogB` example is type-level; the implementation of iteration is `Values()`-level).
+- **Type-level invariants** that genuinely span ≥2 members — thread-safety policy, allocation discipline, lifecycle contract, the "no-cache" design choice that affects every read.
+- **Doxygen `@section` / `@anchor` content** referenced by ≥2 member docblocks (the anchor's content cannot move without breaking the cross-references). See [`@section` and `@anchor` — earn the indirection](#section-and-anchor--earn-the-indirection-with-2-consumers).
+
+Everything else moves down to the member that owns it.
+
+This is distinct from the [Project-wide invariants belong in one canonical place](#project-wide-invariants-belong-in-one-canonical-place) rule: that rule is about a convention that holds across **many sites in the codebase** (the engine's static-init no-heap rule, the `noexcept` terminate-on-throw policy). **This** rule is about claims that hold across **multiple members of one type** — same type-internal scope on both sides of the duplication. The two rules compose: a type docblock should not duplicate either its own members *or* project-wide invariants documented elsewhere.
+
+### Signature shape
+
+A type docblock (`/** ... */` block immediately before a `class`, `struct`, `enum class`, or `namespace { ... }` declaration) containing one or more sentences, sections, or paragraphs whose content is also asserted by:
+
+- A member function's brief or detail block.
+- A member field's `///<` trailing annotation.
+- A nested-type docblock (`struct Entry { ... }`, `class iterator { ... }`).
+- A constructor's `@param` tags.
+
+### Detection signal — the member-overlap audit
+
+For each substantive claim in the type docblock, locate any member docblock that asserts the same thing. The fastest way is the **paraphrase test**: pick a sentence from the type docblock; search the member docblocks for any sentence with the same subject and the same verb (allowing for paraphrasing — *"yields one Entry per occurrence"* vs *"Range over occurrences of the key, in source order"* are the same claim). A match means the type docblock is duplicating.
+
+Three patterns to look for, in order of how often they appear:
+
+1. **Member-enumeration sentences in the type's purpose paragraph.** *"Reads expose a `ValueRange` whose iterator yields one `Entry` per occurrence, in source order, with the parse outcome surfaced per-element."* The verbs (`expose`, `yields`, `surfaced`) name member behaviour; the type's `Values()`, iterator, and `Entry` docblocks all say the same things in their own scope.
+2. **Standalone paragraphs documenting a single member's contract.** *"Allocation-free: storage for resolved tokens lives in the bound `Data` and the mapping table; this class owns no buffers."* The class-level "allocation-free" claim is the same fact as `ValueRange`'s own *"Lightweight, allocation-free range over per-occurrence `Entry` values"*.
+3. **`@section` sub-sections whose content is the union of member docblocks.** A `@section per_element_failure_surface` whose four claims are each fully stated in `Entry`'s docblock or `Parsed()`'s docblock — the section is a redundant index.
+
+### Exception — type-level invariants that span ≥2 members
+
+Some claims genuinely belong to the type, not to any member. Examples:
+
+- A no-cache / no-allocation policy whose **rationale** (Editor two-step init lifecycle, staleness hazard, cost-benefit) doesn't fit on `Parsed()` alone — it's the design choice for the type as a whole. Keep at type level, optionally as a `@section` if ≥2 members `@ref` it.
+- A thread-safety contract that the caller must respect across every public read or write.
+- A lifecycle constraint (*"must outlive the bound `Data`"*) that applies whichever member the caller calls.
+- A non-obvious canonical-example WHY (the `-forceFullStacktrace` per-log-level case for `MappedParameter<T, Multi>`) that frames the type's purpose. No member's docblock is the natural home for this.
+
+The discriminator is the **member-overlap audit**: if the claim is *also* asserted by a member's docblock, the type docblock is duplicating. If the claim is asserted *only* at the type level, it belongs there.
+
+### Severity
+
+**SHOULD** — trim the type docblock to its @brief, its type-level purpose/example prose, and any type-level invariants that don't overlap with the members. Move every overlapping sentence down into the member that owns it (or simply delete the type-level copy, if the member's wording is already adequate).
+
+### Worked example
+
+See [Example H](#example-h----type-docblock-synthesises-its-members-should) below.
+
+---
+
+## `@section` and `@anchor` — earn the indirection with ≥2 consumers
+
+A Doxygen `@section` or `@anchor` is a named destination — its purpose is to be **referenced** from elsewhere. When the file has exactly one `@ref` consumer for a given anchor, the anchor isn't earning its keep: the reader of the consumer pays an upward lateral jump to read content that would have read more directly if it sat inline at the consumer. When there are zero consumers, the anchor is dead — a reference target nobody references.
+
+The rule: **an anchor needs ≥2 consumers to justify the indirection.** Below that, the anchor's content moves to its single consumer (or is deleted if the content was itself a synthesis of other docblocks — see [Type docblock — explain the type, not its members](#type-docblock--explain-the-type-not-its-members)).
+
+This is a sibling of [Cross-reference hygiene — local gist before lateral pointer](#cross-reference-hygiene----local-gist-before-lateral-pointer) — that rule says *when you keep an anchor, format the pointer correctly* (gist first, pointer last). **This** rule says *whether to keep the anchor at all*. Apply this rule first; the cross-reference rule applies only to anchors that survive the consumer-count audit.
+
+### Signature shape
+
+A `@section <name>` or `@anchor <name>` declaration in a docblock, paired with a count of `@ref <name>` consumers across the same file (and, for module-level anchors, the same module). The discriminator is the consumer count.
+
+### Detection signal
+
+Run a paired grep against the file (or module) for every anchor in the diff:
+
+```bash
+# Define-side: every @section / @anchor in the file
+rg '^\s*\*\s*@(section|anchor)\s+(\w+)'  <file>
+
+# Reference-side: every @ref against that anchor name
+rg '@ref\s+(\w+)'  <file>
+```
+
+For each anchor, count consumers. Three outcomes:
+
+1. **0 consumers** — dead anchor. Delete the anchor; either the `@ref` was removed and the anchor wasn't cleaned up, or the anchor was speculative ("someone might want to reference this someday"). **MUST**: remove the anchor and any orphan content the anchor was framing.
+2. **1 consumer** — single-consumer anchor. **SHOULD**: inline the anchor's content at the consumer (move the prose down, delete the anchor declaration, delete the `@ref`). If the anchor's content is itself a synthesis of other docblocks (e.g. a `@section per_element_failure_surface` whose claims are also in `Entry::brief` and `Parsed()::brief`), delete both the anchor *and* its content — the consumer's existing docblocks already carry the load.
+3. **≥2 consumers** — anchor earns its keep. Leave in place; apply the cross-reference hygiene rule (gist before pointer) to each consumer.
+
+### Exception — module-spanning anchors
+
+An anchor in a primitive's `@file` block whose `@ref` consumers live across many sites in the codebase (e.g. `bootconfig_threading` referenced from every `BootConfig`-consumer site) is in the ≥2-consumer category by definition; the count is across files, not within the defining file. Apply the same rule with module-wide consumer counting.
+
+### Severity
+
+| Consumer count | Severity | Action |
+| --- | --- | --- |
+| 0 | **MUST** | Delete the anchor and any content the anchor was framing |
+| 1 | **SHOULD** | Inline content at the consumer; delete the anchor + the `@ref` |
+| ≥2 | -- | Keep; apply cross-reference hygiene |
+
+### Worked example
+
+See [Example I](#example-i----single-consumer-section-anchor-should) below.
+
+---
+
 ## What NOT to comment — suppress list
 
 Raise **no** finding for absent comments on any of the following:
@@ -888,6 +994,116 @@ N. [SHOULD] Runtime/Logging/LogAssertExtended.cpp:<line> -- the comment on
      // The editor's later `BootConfig::InitFromString` (project boot.config)
      // is not picked up.
 ```
+
+### Example H -- type docblock synthesises its members (SHOULD)
+
+A class docblock for `MappedParameterData<T, Cardinality::Multi>` (a multi-value `BootConfig` parameter view) carries a 38-line docblock with: a purpose paragraph naming the type, a `@section bootconfig_multivalue_no_cache` block, a standalone `Allocation-free` paragraph, and a `@section bootconfig_multivalue_failure_contract` block. Within the same class, dedicated docblocks already exist on the `Entry` nested struct, the `ValueRange` nested class, `Values()`, `Parsed()`, and `iterator::operator*()` -- each carrying the contract of the member it sits on.
+
+```text
+N. [SHOULD] Modules/NativeKernel/Include/NativeKernel/Bootstrap/BootConfigParameterData.h:<line> --
+   the class docblock on `MappedParameterData<T, Cardinality::Multi>` is 38 lines;
+   the member-overlap audit shows multiple paragraphs duplicating the immediately-
+   following member docblocks:
+     * "Reads expose a `ValueRange` whose iterator yields one `Entry` per occurrence,
+       in source order, with the parse outcome surfaced per-element" -- `Values()`'s
+       own docblock at <line> says "Range over occurrences of the key, in source
+       order. Each element is an `Entry` carrying its own `parsed` flag".
+     * "Allocation-free: storage for resolved tokens lives in the bound `Data` and
+       the mapping table; this class owns no buffers." -- `ValueRange::brief` at
+       <line> already opens with "Lightweight, allocation-free range over per-
+       occurrence `Entry` values".
+     * Inside `@section bootconfig_multivalue_no_cache`: "Each `Values()` / `Parsed()`
+       call walks the bound `Data` afresh, and the iterator re-runs `MatchToken`
+       per step" -- `ValueRange::brief` says "Each iterator step re-evaluates the
+       underlying `Data` against the bound mapping table".
+     * Whole `@section bootconfig_multivalue_failure_contract` (12 lines) -- every
+       claim is in `Entry`'s docblock or `Parsed()`'s docblock. Single-consumer
+       anchor on top of the duplication (see anchor-consumer rule).
+   What stays at type level:
+     * The canonical `-forceFullStacktrace LogA -forceFullStacktrace LogB` example
+       (no member is the natural home for this).
+     * The bare-key rule as a one-line property of the type.
+     * `@section bootconfig_multivalue_no_cache` body (Editor two-step init /
+       RemoveAll() lifecycle / staleness hazard / cost-benefit) -- >=2 consumers
+       (`ValueRange::brief`, `Parsed()::brief`, and the single-value `Parsed()`'s
+       brief), so the anchor earns its keep.
+   Evidence: cpp-commenting.md SHOULD rule (Type docblock -- explain the type,
+             not its members); paraphrase test fires on three sentences and the
+             whole failure-contract @section.
+   Suggested trim (38 -> 18 lines):
+     /** Multi-value mapping-driven parameter -- one `T` per key occurrence.
+      *
+      *  Models keys whose every command-line occurrence contributes a value;
+      *  the canonical example is `-forceFullStacktrace LogA -forceFullStacktrace LogB`
+      *  where both `LogA` and `LogB` are wanted, not just the last. A bare
+      *  key (`-foo` with no value) contributes nothing: `BootConfig::Data`
+      *  stores zero values for it, so it does not surface as an entry.
+      *
+      *  @section bootconfig_multivalue_no_cache No caching by design
+      *
+      *  Public reads do not cache. The Editor performs a second
+      *  `BootConfig::InitFromString` once the project has been resolved
+      *  (`Application.cpp`), which calls `RemoveAll()` and re-populates
+      *  `Data` from the project's `boot.config`; a cache populated by the
+      *  first init would silently ignore the project's view. These are
+      *  load-time arguments with tiny token tables, so the no-cache cost
+      *  is well below the staleness hazard of the alternative.
+      */
+```
+
+The deleted prose was the union of what `Values()`, `ValueRange`, `Entry`, `Parsed()`, and `iterator::operator*()` already say. The kept prose is the type's purpose (problem framing + canonical example), one type-level property (bare-key rule, which no individual member is the natural home for), and the no-cache `@section` whose anchor has three `@ref` consumers and therefore earns the indirection.
+
+### Example I -- single-consumer `@section` anchor (SHOULD)
+
+The same class block carries a second `@section`, `bootconfig_multivalue_failure_contract`. Anchor-consumer grep shows exactly one `@ref` in the file -- the `Entry` struct's docblock at <line>. The anchor's body is 12 lines summarising per-element validity, `Parsed()` as a convenience answer, `Entry::token` for diagnostics, and the "absent key -> vacuously parsed" property.
+
+```text
+N. [SHOULD] Modules/NativeKernel/Include/NativeKernel/Bootstrap/BootConfigParameterData.h:<line> --
+   `@section bootconfig_multivalue_failure_contract` has exactly one consumer
+   in the file:
+     $ rg '@(section|anchor)\s+bootconfig_multivalue_failure_contract'  <file>
+     <class-block-line>:     *  @section bootconfig_multivalue_failure_contract ...
+     $ rg '@ref\s+bootconfig_multivalue_failure_contract'  <file>
+     <entry-block-line>:     *  See @ref bootconfig_multivalue_failure_contract ...
+   Audit of the anchor's body against the existing member docblocks:
+     * "Each `Entry` carries its own parse outcome and source token, so a caller
+       can choose how to react: silently skip, log, abort, or collect." --
+       `Entry`'s own docblock says "Consumers dispatch via `if (entry.value)`
+       and dereference with `*entry.value`; `entry.token` is always non-null
+       and carries the source spelling, suitable for failure-path diagnostics".
+     * "`Parsed()` is the convenience answer for callers that only need a single
+       bool over all occurrences" -- `Parsed()`'s docblock says "True iff every
+       occurrence of the key matched the bound table. Vacuously true when the
+       key is absent. Sugar over 'every entry's `value` is engaged'".
+     * "bad tokens stay available on `Entry::token` for any diagnostic walk" --
+       covered by `Entry`'s docblock + `Parsed()`'s "callers that need a per-
+       element diagnostic walk `Values()` directly and read `Entry::token`".
+     * "An absent key has zero occurrences, so the range is empty and `Parsed()`
+       is vacuously `true`." -- `Values()`'s `@return` says "empty when the key
+       is absent"; `Parsed()`'s docblock says "Vacuously true when the key is
+       absent".
+   Outcome: the anchor's content is fully duplicated in the member docblocks
+   the single consumer already lives next to. Inlining means moving nothing --
+   the consumer's existing prose already carries the load. Delete the anchor,
+   delete the `@ref`.
+   Evidence: cpp-commenting.md SHOULD rule (`@section` and `@anchor` -- earn
+             the indirection with >=2 consumers); consumer count = 1, anchor
+             body fully duplicated by member docblocks.
+   Suggested change:
+     1. Delete the entire `@section bootconfig_multivalue_failure_contract`
+        block (12 lines) from the type docblock.
+     2. Delete the "See @ref bootconfig_multivalue_failure_contract for the
+        bare-key and per-element-validity rules." line (2 lines) from `Entry`'s
+        docblock.
+     3. Promote the one type-level property that wasn't already in any member
+        ("A bare key contributes nothing -- `BootConfig::Data` stores zero
+        values for it, so it does not surface as an entry") to the type
+        docblock's purpose paragraph.
+```
+
+The before/after net: -14 lines of comment text, zero compiled code change. The reader of `Entry`'s docblock learns the same contract without the upward lateral jump; the reader of the type docblock learns the bare-key rule directly in the purpose paragraph. Cross-reference graph after the change has one fewer node, no dangling `@ref`.
+
+The discriminator on this finding is the **consumer count**, not the anchor's content quality: even a well-written single-consumer anchor would still earn the SHOULD, because the indirection cost (every reader of the consumer pays the lateral jump) outweighs the format benefit (none -- single-consumer means no shared destination to standardise). The companion check is "did the anchor's content move?": when the consumer's existing docblock already carries the load (as here), the move is a delete; when the consumer needs the content, the move is a transcription from anchor body to consumer body.
 
 ---
 
