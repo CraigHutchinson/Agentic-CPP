@@ -158,7 +158,86 @@ Before producing any finding, the reviewer **must** load enough context to make 
 
    The failing pattern this rule prevents: reviewing `git diff <local-base-ref>..HEAD` where the local base ref is a stale copy of the published branch. Findings against upstream-base commits the head branch hasn't pulled yet appear as if the head branch introduced them. They are spurious; the GitHub diff (which uses the live `origin/<base>` tip via three-dot semantics) does not show them. See `Example 9 -- Stale-base spurious findings`.
 
+0a. **File-size triage.** After resolving the diff base, measure the token budget before reading any file content. Run `wc -l` (or equivalent) against every file in the diff's `--name-only` list. Classify each file:
+
+   | Category | Line count | Reading strategy |
+   | --- | --- | --- |
+   | **Normal** | < 800 lines | Read in full per the file-by-file discipline below. |
+   | **Large** | 800 -- 2000 lines | Read in full but prioritise this file early in the pass order (while context headroom is greatest). Note the line count in per-file notes so findings can cite it as a split signal if warranted. |
+   | **Oversized** | > 2000 lines | Cannot be held in context alongside other files without risking compaction. Apply the oversized-file protocol below. |
+
+   **Oversized-file protocol.** When a file exceeds ~2000 lines, a single `Read` will consume a large share of the context window -- potentially triggering compaction before analysis completes, or leaving insufficient room for the remaining files. Instead:
+
+   1. **Read the diff hunks only first.** Use `git diff` output for this file to identify the changed regions and their line ranges. Understand the scope of changes before loading file content.
+   2. **Read in targeted segments.** Read the changed hunks plus ~50 lines of surrounding context per hunk (declaration block, enclosing function, class preamble). Use `offset` + `limit` on the Read tool to load segments, not the entire file.
+   3. **Read the file's declaration surface separately.** For a header, read the class/struct declarations and public method signatures (typically the first ~200 lines and any `public:` sections). For a `.cpp`, read the includes + anonymous-namespace block + function signatures.
+   4. **Analyze each segment before loading the next.** The same analyze-before-next-read discipline as the file-by-file pass, applied at the segment level within a single large file.
+   5. **Note file size as a potential finding.** A file exceeding 2000 lines with multiple banner comments or multiple distinct responsibility clusters is a SHOULD split signal (per the section-divider banner rule in `cpp-commenting.md`). Record this in per-file notes for the cross-file reconciliation.
+
+   **Pass ordering.** When the diff contains a mix of normal and large files, review large and oversized files first while context headroom is greatest. Normal-sized files are more resilient to reduced headroom later in the pass.
+
+   Skip this step entirely when the diff touches 4 or fewer files that are all under 800 lines -- the overhead of the triage adds nothing when every file fits comfortably.
+
 1. **Read the diff in full**, not just the changed hunks. Use `git diff origin/<base>...<head>` (three-dot, base resolved per step 0) and look at the surrounding 50 lines per hunk to understand the surrounding contract.
+
+   **File-by-file reading is mandatory. Spot-checks and batch-reads are not permitted.**
+
+   The two banned patterns:
+
+   - **Spot-check**: reading the changed hunks only, or the first ~50 lines of a file, or the function signature without the body. The reviewer scans for "the obvious thing" and runs out of attention before reaching the rest of the file. Findings that live in the parts that were not read are silently impossible to raise.
+   - **Batch-read**: issuing multiple `Read` tool calls in one tool-call batch (or in close succession without any analysis between them). The tool results land in the context window all at once; the reviewer then tries to synthesise findings across N files from short-term memory. Two failure modes follow. (a) Recall is lossy: the exact wording of a comment, the precise structure of a `static_assert`, a small `noexcept` annotation -- all the slots where SHOULD/MUST findings live -- get blurred. (b) In long sessions, batch-reads accelerate context compaction; compaction replaces the raw file content with a summary like "Read 5 files: A.h, B.h, ...", at which point findings that depend on exact wording become unraisable -- the evidence is no longer in context.
+
+   The discipline:
+
+   - **One `Read` per file, in its own tool-call batch.** Even when ten files need review, that is ten sequential calls, not one batch.
+   - **Run the layer-N analysis for that file before reading file N+1.** Apply the per-file checks (L0 wiring audit, naming, commenting heuristics, modernisation greps) while the content is fresh and uncompressed.
+   - **Take per-file notes in your scratchpad** -- in-message thinking, or a per-file mini-findings list. Notes survive compaction; raw file reads do not. For each file, record: new types/functions declared, helper shapes introduced, naming choices, comment style patterns, and any cross-file references (`@see`, `@ref`, `// see Foo.h`). These notes feed the cross-file reconciliation step.
+   - **Read the file in full**, not just the changed hunks. Doc-comment trims, dead `@section` anchors, and project-wide-invariant restatement live outside the immediate hunk lines.
+   - **Do not re-read on a second pass.** If a finding requires cross-file evidence, quote the relevant excerpt from notes; do not issue a fresh `Read` to "double-check". A second batch of reads is just as compaction-hostile as the first.
+
+   Suppress only when:
+   - The diff is a literal directory copy or generated-file move where per-file inspection is mechanically equivalent to a `git log --stat` pass.
+   - The "files" are auto-generated `.pb.h` / `.gen.cs` artefacts whose content is not the review surface (review the generator inputs, not the outputs).
+
+   The failure mode this rule guards against, in one sentence: a review pass that touched every file by name but missed every comment-trim finding because no single file was ever in context long enough for the trimmable wording to be quoted.
+
+   ### Cross-file survey (conditional -- large diffs only)
+
+   **Activation threshold:** run this phase only when the diff touches **5 or more files with new or changed declarations** (classes, structs, enums, free functions, public methods). Files with only mechanical caller updates (a one-line include change, a rename at a call site, a parameter pass-through) do not count. Below the threshold, the per-file notes from the file-by-file pass are sufficient -- the reviewer naturally holds 2-4 files in working memory.
+
+   **Purpose:** cross-file concerns -- duplicate helper shapes across files, inconsistent naming of similar APIs, the same contract documented differently in two headers, near-duplicate code the reinvention check (step 7) would miss because each file looks novel in isolation -- are invisible to a strictly per-file pass. The survey builds a lightweight cross-file manifest before the deep review begins, so the file-by-file pass can check each file against it.
+
+   **What to do:**
+
+   1. After step 0 (diff-base resolution), run `git diff --stat` and `git diff --name-only` against the resolved three-dot range. Count declaration-bearing files. If below threshold, skip to the file-by-file pass.
+   2. For each declaration-bearing file, grep the diff output for new type and function declarations -- `class `, `struct `, `enum `, function signatures. Do **not** full-read any file in this phase. The diff hunks and targeted line-range reads of declaration blocks (signatures + doc comments only, not full bodies) are sufficient.
+   3. Build a **cross-file manifest** in your scratchpad:
+      - New types and their one-line purpose (from the brief or the class name).
+      - New helper functions and their shape (e.g. "case-insensitive string compare", "argv flag check", "token-to-enum lookup").
+      - Naming patterns (e.g. "file A uses `TryResolve`, file B uses `Find` for a similar lookup shape").
+      - Comment style choices (e.g. "file A documents thread-safety with `@note`, file B uses a free-form `//` line").
+      - Cross-file references (`@see`, `@ref`, `// see Foo.h`).
+
+   **What not to do:**
+
+   - Do not full-read any file. The survey is declaration-level only.
+   - Do not produce findings. The survey produces a manifest, not a findings list. Findings come from the file-by-file pass.
+   - Do not batch-read multiple full files. The batch-read ban is absolute for full-file reads regardless of phase.
+
+   **During the file-by-file pass**, check each file's declarations, helpers, and comment patterns against the manifest. This is a note lookup, not a re-read. When a cross-file concern surfaces (duplicate shape, naming inconsistency, comment style drift), record it as a finding with evidence from both files' notes.
+
+   ### Cross-file reconciliation (after file-by-file pass)
+
+   After all files have been read and analyzed individually, scan the per-file notes for cross-file findings before finalising the report. This takes under a minute and catches patterns that only become visible after the full pass:
+
+   - **Duplicate helper shapes** across files (two files each introducing a string-compare helper with different names).
+   - **Naming inconsistency** (similar APIs named with different verbs or patterns across the diff).
+   - **Comment style drift** (one header using `/** */` blocks with full `@param` tags, another using bare `///` lines for equivalent declarations).
+   - **Cross-reference integrity** (`@see FooManager` in file A, but `FooManager` was renamed to `FooCoordinator` in file B within the same diff).
+   - **Contract duplication** (the same ownership or thread-safety claim stated in two headers rather than in one canonical location with a cross-reference).
+
+   No re-reads. Evidence comes from per-file notes and the cross-file manifest. If a finding requires exact wording to cite, it must have been captured in the notes during the file-by-file pass -- if it wasn't, the note-taking discipline was insufficient, not the reconciliation step.
+
 1a. **L0 check — production consumer audit.** For every new file, class, and non-trivial free function introduced by the diff: grep the codebase for its name and count *production* callers (exclude the new type's own test file). A new artifact with zero production callers in this commit is dead code on trunk -- raise as L0 SHOULD (or MUST if the commit message claims it is wired). Record the result before proceeding to L1.
 2. **Identify call sites of new / changed public APIs.** `Grep` the codebase for the new symbol; if it has callers in the same chain, read at least one site to understand intent.
 3. **Read the design / spec doc** referenced by the PR description or commit messages. Map each MUST finding to a specific design anchor or stated invariant.
