@@ -184,10 +184,12 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
 - **detect:**
   ```bash
   rg -c -P '^\t' $G $SCOPE                                                                                          # tabs
-  rg -n -P '^\s*(?:\}\s*)?(?:if|else|for|while|switch|do|try|catch)\b[^;]*\{\s*$|^\s*\}?\s*else\s*\{' $G $SCOPE   # control flow, same-line brace
+  rg -n -P '^\s*(?:\}\s*)?(?:if|else|for|while|switch|do|try|catch)\b.*\{\s*$' $G $SCOPE   # control flow, same-line brace (includes `for (a; b; c) {`)
   rg -n -P '^\s*(?:template\s*<[^>]*>\s*)?(?:class|struct|union|namespace|enum(?:\s+class)?)\b[^;()]*\{\s*$' $G $SCOPE   # type or namespace, same-line brace
+  # candidates: function, method or test-case body opened on the signature's line
+  rg -n -P '^\s*(?!(?:if|else|for|while|switch|do|try|catch|namespace|class|struct|union|enum|return)\b)[^=\[\]]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?(?:->\s*[\w:<>,\s&*]+)?\{\s*$' $G $SCOPE
   ```
-  False positives: a `do {` inside a macro; a type opened on one line with a braced initialiser. Tally per tree (`include`, `src`, ...) because trees often differ. Function-brace placement is judgement from the sample; lambda bodies are exempt.
+  False positives: a `do {` inside a macro; a type opened on one line with a braced initialiser. The function generator also catches the last line of a multi-line control-flow condition (`&& ready) {`), which is a real violation counted under control flow, and it deliberately skips any line containing `[`, `]` or `=`, so lambda bodies and braced initialisers are exempt. Tally per tree (`include`, `src`, ...) because trees often differ. Measured on Sub0Pipeline before its conversion: 174 control-flow, 73 type or namespace, 121 function-generator lines; all three were 0 afterwards.
 - **severity:** STYLE/NICE (a formatter should own this; see Q-FORMAT)
 - **overrides:** none.
 
@@ -271,7 +273,7 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
   rg -n -P "$N1" -g '*.hpp' $PUBLIC     # const (query) members without the attribute
   rg -n -P "$N2" -g '*.hpp' $PUBLIC     # status-like returns without the attribute
   ```
-  Read each hit and decide against the value above. False positives: a lambda in a default argument, an `override` whose base already carries the attribute, a `bool` that is a genuine side-effect convenience.
+  Read each hit and decide against the value above. False positives: a lambda in a default argument, an `override` whose base already carries the attribute, a `bool` that is a genuine side-effect convenience. A lambda written at class or namespace scope matches the candidate pattern (seen in Sub0Pipeline `pipeline.hpp`); it is not a function declaration.
 - **severity:** STYLE/CANDIDATE. Report each candidate with a short justification ("pure query", "status return", ...); never report a count of functions lacking the attribute.
 - **overrides:** refines `cpp-idioms.md > [[nodiscard]] heuristics` for Sub0; where the two disagree on a case, this block wins.
 
