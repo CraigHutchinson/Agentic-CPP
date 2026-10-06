@@ -503,7 +503,7 @@ End the report with up to four sections:
 
 ## Style adherence pass (STYLE)
 
-Runs only when the [profile selection](../cpp/references/cpp-profile-selection.md) selected a style profile. It is driven entirely by that profile's rules; the skill adds no style rules of its own.
+Runs only when the [profile selection](../cpp/references/cpp-profile-selection.md) selected a style profile. It is driven entirely by that profile's rules; the skill adds no style rules of its own. It is skipped in plan review mode (no code exists to inspect).
 
 **Why a separate category, not a layer.** L0-L3 are gates: a MUST at one layer defers the layers below it. Style findings must never gate design findings and must never hide among them, so STYLE is a parallel category with its own tag and its own report section, not an L4. It runs after L0-L3 and its output never changes their tiers or the Rewrite Brief.
 
