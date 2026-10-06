@@ -11,6 +11,7 @@ Self-contained test cases for the `cpp-review` skill. Each case is a C++ snippet
 | 00 | `00-comprehensive` | Stranger Q1/Q5; L2 API smells (bool selectors, pair return); L3 (C-cast, unscoped enum, typedef, index loop); reinvention; testability bypass | 11 | 1 |
 | 01 | `01-anti-pattern-guard` | Input-source suppression -- reviewer must NOT raise null-guard finding | 0 | 1 |
 | 02 | `02-l0-dead-code` | L0 production-caller audit -- class with zero callers ships as dead code | 1 | 0 |
+| 03 | `03-sub0-style` | STYLE category, Sub0 profile -- decided rules fire; standard-protocol names and open items must not | 6 | 2 |
 
 See each case's `notes.md` for the defect map and pass criteria.
 

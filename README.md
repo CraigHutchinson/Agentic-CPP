@@ -11,7 +11,7 @@ AI agent personas for C++17 development, for use with [Claude Code](https://docs
 | Skill | When to invoke | What it does |
 |---|---|---|
 | **cpp-write** | Before authoring a new class, public API, or module | Loads reference material and applies a 7-step authoring checklist to produce zero-finding code on the first pass |
-| **cpp-review** | After substantive C++ changes | L0--L3 layered design review: intent, structural/boundary, API contract, implementation. Also supports **plan review mode** -- catch issues in a design document before any code is written |
+| **cpp-review** | After substantive C++ changes | L0--L3 layered design review: intent, structural/boundary, API contract, implementation. Also supports **plan review mode** -- catch issues in a design document before any code is written -- and a **whole-codebase style audit mode** that tallies a repository against its house style profile |
 | **cpp-simplify** | After L0/L1 MUST findings from cpp-review | Applies the Rewrite Brief from cpp-review to rewrite the commit cleanly |
 | **cpp-project-init** | Once per new project | Stamps `.cursor/rules/cpp-standards.mdc`, a `## C++ Skills` section in `AGENTS.md`, and a base `.clang-tidy` into the project |
 | **cpp-pr** | When announcing PRs / stacks in Slack -- channel or DM | Produces Slack-mrkdwn-correct copy in a fenced text block ready to paste verbatim; audience-aware (channel vs DM); covers PR-stack announcements, single-PR review asks, merged-PR celebrations, and stack status updates |
@@ -24,6 +24,9 @@ Shared reference material in `cpp/references/` is loaded by all four skills:
 | `cpp-modernisation.md` | C++17 idiom tiers, project-specific type overlay, globals/testability seam pattern |
 | `cpp-commenting.md` | Doc comment MUST/SHOULD table, doc templates, ownership annotation conventions |
 | `cpp-anti-patterns.md` | Finding categories learned not to raise; overriding principle |
+| `cpp-profile-selection.md` | How a project selects a style profile and an org overlay; the profile schema |
+
+Style profiles live beside the references as `cpp/<name>-references/<name>-profile.md`; the Sub0 family's is `cpp/sub0-references/sub0-profile.md`.
 
 ---
 
@@ -63,6 +66,23 @@ All four skills share a layered review framework applied by `cpp-review` and mir
 | **L3** | Implementation | Is the implementation idiomatic and documented? | Legacy idioms, modernisation failures, missing ownership annotations, stale comments |
 
 `cpp-review` runs L0–L3 in code-review mode and L0–L2 in plan-review mode (L3 is skipped for plans — no implementation to inspect). A MUST at L0 or L1 defers all lower-layer findings until the structural issue is resolved; they are listed under "Deferred pending redesign" rather than dropped.
+
+---
+
+## Style profiles and org overlays
+
+The generic references state substance (correctness, safety, design) plus a default for each style choice. Two optional extensions adapt them to one codebase:
+
+| Extension | Holds | Example |
+|---|---|---|
+| **Style profile** | Values for choices between acceptable alternatives: naming case, file extension, include style, comment notation, layout. Rules carry a `status` (decided / provisional / open), a severity and a mechanical `detect` command. | `cpp/sub0-references/sub0-profile.md` |
+| **Org overlay** | Local knowledge: in-house utilities, module boundaries, type preferences. | `cpp/unity-references/` (not tracked) |
+
+**Selection rule** (full text in `cpp/references/cpp-profile-selection.md`): a project declares `style-profile: <name>` (and optionally `overlay: <name>`) on a line of its `AGENTS.md`, `CLAUDE.md` or `STYLE_GUIDE.md`. Without a declaration, markers decide (Sub0: a `project(Sub0...)` CMake line or an `include/sub0*` directory). With neither, behaviour is exactly as before: generic references plus `unity-references` if present.
+
+`cpp-review` reports style adherence in its own `STYLE` category, separate from L0-L3, as a per-rule tally. In **whole-codebase style audit mode** it audits a repository against the profile and suggests an order of work (mechanical changes before API-breaking ones). `cpp-write` loads the profile first; where the profile and a generic example disagree, the profile wins.
+
+The generic references have not yet been neutralised: their examples still show one house style (`.h`, PascalCase methods, `m_` members). A profile's "Superseded generic guidance" list says which generic text it overrides.
 
 ---
 
@@ -152,6 +172,7 @@ calls the Claude API, scores each run, and records token usage.
 | `00-comprehensive` | Stranger Q1/Q5; L2 API smells; L3 modernisation; reinvention; testability bypass | 11 |
 | `01-anti-pattern-guard` | Input-source suppression (must-not-fire) | 0 |
 | `02-l0-dead-code` | L0 production-caller audit | 1 |
+| `03-sub0-style` | STYLE category against the Sub0 profile (decided rules fire; exempt names and open items must not) | 6 |
 
 ```sh
 pip install -r cpp/eval/requirements.txt

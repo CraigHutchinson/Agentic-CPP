@@ -1,0 +1,62 @@
+# Case 03: STYLE category against the Sub0 profile.
+# The harness loads cpp/sub0-references/sub0-profile.md for this case (see `profile`).
+
+profile: sub0
+
+must_fire:
+  - id: S1
+    tier: SHOULD
+    signal: "S05: named include guard instead of #pragma once"
+    keywords: ["#pragma once", "pragma once", "ifndef", "include guard", "S05"]
+    match: any_2
+
+  - id: S2
+    tier: SHOULD
+    signal: "S04: own header in angle brackets and a bare relative quoted include"
+    keywords: ["S04", "angle", "library-rooted", "rooted", "types.hpp", "bare", "sub0pipeline/job.hpp"]
+    match: any_2
+
+  - id: S3
+    tier: SHOULD
+    signal: "S03: @brief tag on the JobQueue class docblock"
+    keywords: ["S03", "@brief", "autobrief", "brief"]
+    match: any_2
+
+  - id: S4
+    tier: SHOULD
+    signal: "S01: public method push_job is snake_case"
+    keywords: ["push_job", "pushJob", "camelCase", "S01"]
+    match: any_2
+
+  - id: S5
+    tier: SHOULD
+    signal: "S02: plain // comment on the public empty() declaration instead of Doxygen"
+    keywords: ["S02", "empty", "Doxygen", "prose", "plain"]
+    match: any_2
+
+  - id: S6
+    tier: SHOULD
+    signal: "S12: data member m_count uses an m_ prefix instead of camelCase_"
+    keywords: ["m_count", "S12", "trailing underscore", "count_", "camelCase_"]
+    match: any_2
+
+must_not_fire:
+  - signal: "request_stop (and begin/end/size/swap) raised as a method-case violation"
+    keywords: ["rename request_stop", "request_stop should be", "requestStop", "rename swap", "swap should be", "rename begin", "rename size"]
+    match: any_1
+    notes: >
+      request_stop mirrors std::stop_source and begin/end/size/swap are standard
+      container protocol names; S01 exempts them. The reviewer may list them as
+      "exempt, verify". Phrases here are specific to the wrong finding (a rename
+      request), because the exempt list legitimately names these functions.
+
+  - signal: "k-prefixed enumerators raised as a violation (open item O1)"
+    keywords: ["rename kIdle", "rename kBusy", "kIdle should", "kBusy should", "remove the k prefix", "k prefix violates", "k-prefix violates"]
+    match: any_1
+    notes: >
+      Constants and enumerators are an OPEN item in the profile: a question
+      carrying the preference is allowed, a finding is not.
+
+thresholds:
+  min_recall: 0.80
+  max_noise_ratio: 0.70   # STYLE/CANDIDATE and QUESTION entries beyond the six defects are tolerated

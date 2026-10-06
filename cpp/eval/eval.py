@@ -50,9 +50,15 @@ PRICE_PER_1M_OUTPUT = 15.00
 # Prompt assembly
 # ---------------------------------------------------------------------------
 
-def load_system_prompt() -> str:
+def load_system_prompt(profile: str | None = None) -> str:
     parts = [(SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")]
-    for ref in REFERENCE_FILES:
+    refs = list(REFERENCE_FILES)
+    if profile:
+        # A case declaring `profile: <name>` gets the selection rule and that profile loaded, as
+        # cpp-review would for a project declaring `style-profile: <name>`.
+        refs.append(REFS_DIR / "cpp-profile-selection.md")
+        refs.append(REPO_ROOT / "cpp" / f"{profile}-references" / f"{profile}-profile.md")
+    for ref in refs:
         if ref.exists():
             parts.append(f"\n\n---\n# {ref.name}\n\n{ref.read_text(encoding='utf-8')}")
     return "\n".join(parts)
@@ -167,8 +173,15 @@ def run_case(case_dir: Path, system_prompt: str, model: str,
              client: anthropic.Anthropic) -> dict:
     oracle = load_oracle(case_dir)
     case_input = load_case_inputs(case_dir)
+    profile = oracle.get("profile")
+    if profile:
+        system_prompt = load_system_prompt(profile)
+    context = (
+        f"Project context: its STYLE_GUIDE.md contains the line `style-profile: {profile}`.\n\n"
+        if profile else ""
+    )
     user_message = (
-        f"Review the following C++ files.\n\n{case_input}\n\n"
+        f"{context}Review the following C++ files.\n\n{case_input}\n\n"
         "Produce a numbered findings list following the format in your skill instructions."
     )
 
