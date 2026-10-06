@@ -176,8 +176,8 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
 - **overrides:** `[OVERRIDE]` `cpp-review` step 8 / `cpp-idioms.md` (`<Basename>Tests.cpp`).
 
 ### S10 layout
-- **value:** 4-space indent, no tabs. Allman braces (opening brace on its own line) for namespaces, types, functions **and control flow**. Measured 2026-10-06 over headers, sources, tests and examples, control-flow statements only: Sub0ECS 242 own-line and 0 same-line; Sub0Pub 53 own-line and 5 same-line; Sub0Pipeline 0 own-line and 158 same-line. Two of the three libraries are Allman in practice, including Sub0Pub against its own `STYLE_GUIDE.md`; Sub0Pipeline follows its guide's same-line rule and is the outlier to convert. The Sub0Pipeline and Sub0Pub guides, which say control flow takes a same-line brace, are superseded by this rule.
-- **status:** decided
+- **value:** 4-space indent, no tabs. Allman braces (opening brace on its own line) for namespaces, types and functions. Control flow: **provisionally** also on its own line, pending the owner's confirmation. Measured 2026-10-06 over headers, sources, tests and examples, control-flow statements only (same-line / own-line): Sub0Log 954 / 0; Sub0TieredCache 384 / 0; Sub0MemPage 302 / 0; Sub0HexGrid 61 / 0; Sub0Pub 12 / 53; Sub0ECS 0 / 258; Sub0Pipeline 174 / 0 before its conversion on 2026-10-06 and 0 / 161 after. So five of the seven libraries were written with same-line control-flow braces, as the Sub0Pub and original Sub0Pipeline guides say, and two (Sub0ECS, Sub0Pub in practice) with own-line. The own-line choice was made from a three-library sample and converted Sub0Pipeline; it is not a family majority. Until the owner confirms, do not convert another library's control-flow braces in either direction; report the tally.
+- **status:** decided for indent and for namespace, type and function braces; **provisional** for control-flow brace placement
 - **why:** one layout; matches the code.
 - **correct:** `if (x)` newline `{`
 - **incorrect:** `if (x) {`
@@ -190,7 +190,7 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
   rg -n -P '^\s*(?!(?:if|else|for|while|switch|do|try|catch|namespace|class|struct|union|enum|return)\b)[^=\[\]]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?(?:->\s*[\w:<>,\s&*]+)?\{\s*$' $G $SCOPE
   ```
   False positives: a `do {` inside a macro; a type opened on one line with a braced initialiser. The function generator also catches the last line of a multi-line control-flow condition (`&& ready) {`), which is a real violation counted under control flow, and it deliberately skips any line containing `[`, `]` or `=`, so lambda bodies and braced initialisers are exempt. Tally per tree (`include`, `src`, ...) because trees often differ. Measured on Sub0Pipeline before its conversion: 174 control-flow, 73 type or namespace, 121 function-generator lines; all three were 0 afterwards.
-- **severity:** STYLE/NICE (a formatter should own this; see Q-FORMAT)
+- **severity:** STYLE/NICE (a formatter should own this; see Q-FORMAT). Control-flow brace placement: STYLE/QUESTION until confirmed.
 - **overrides:** none.
 
 ### S11 type-case
