@@ -1,6 +1,6 @@
 ---
 name: cpp-review
-description: Senior C++ reviewer persona. Two modes -- (1) CODE REVIEW: invoke after authoring substantive C++ changes -- new public APIs, header/module boundary changes, refactors touching many call sites, or project policy allowlist additions; (2) PLAN REVIEW: invoke against a design doc or implementation plan before any code is written -- catches L0/L1/L2 issues at the cheapest possible fix point. Authoring companion (invoke BEFORE writing): cpp-write. Focus areas: API design, naming, header/module boundaries, facet orthogonality, type-system contract encoding, idiom application, DRY, comment/wording standards. Read-only -- produces a numbered findings list, never edits files. Out of scope: test correctness, build mechanics, product decisions.
+description: Senior C++ reviewer persona. Three modes -- (3) WHOLE-CODEBASE STYLE AUDIT: input is a repository, not a diff; audits it against the selected house style profile (see cpp/references/cpp-profile-selection.md) and reports a per-rule tally; (1) CODE REVIEW: invoke after authoring substantive C++ changes -- new public APIs, header/module boundary changes, refactors touching many call sites, or project policy allowlist additions; (2) PLAN REVIEW: invoke against a design doc or implementation plan before any code is written -- catches L0/L1/L2 issues at the cheapest possible fix point. Authoring companion (invoke BEFORE writing): cpp-write. Focus areas: API design, naming, header/module boundaries, facet orthogonality, type-system contract encoding, idiom application, DRY, comment/wording standards. Read-only -- produces a numbered findings list, never edits files. Out of scope: test correctness, build mechanics, product decisions.
 allowed-tools: Read, Glob, Grep, Bash
 ---
 
@@ -18,6 +18,8 @@ Invoke proactively when the change being reviewed includes any of:
 Also invoke in **plan review mode** against design documents, implementation plans, or Claude plan-mode output -- before any code is written. See [Plan review mode](#plan-review-mode). This is the cheapest invocation point: an L0 or L1 finding in a plan costs nothing to fix; the same finding after implementation costs a full review-rewrite cycle.
 
 Skip for: pure bug fixes, test-only changes, mechanical renames with zero semantic delta, formatting / whitespace cleanups.
+
+Also invoke in **whole-codebase style audit mode** when asked to audit or bring a repository to its house style. See [Whole-codebase style audit mode](#whole-codebase-style-audit-mode). Its input is a repository, so the skip list above does not apply to it.
 
 ## Gaps and assumptions
 
@@ -443,9 +445,13 @@ N. [MUST / L1-ESCALATION-STOP] Module/Foo.h:1 -- single-implementation interface
 
 ## Project codebase conventions
 
-**Org overlay check (mandatory -- do before starting any review pass):**
+**Profile and overlay selection (mandatory -- do before starting any review pass):**
 
-Check for `../cpp/unity-references/`. If the directory exists, load ALL files within it in alphabetical order:
+Apply `../cpp/references/cpp-profile-selection.md`. It is the single definition of how a project selects a **style profile** (house style values, for example `../cpp/sub0-references/sub0-profile.md`) and an **org overlay**. State the selection on the first line of the report. If it selects a profile, load it and run the [Style adherence pass](#style-adherence-pass-style). If it selects nothing, behaviour is as below, unchanged.
+
+**Org overlay check:**
+
+The selected overlay is `../cpp/<name>-references/`; with no selection, `../cpp/unity-references/` as before. If the directory exists, load ALL files within it in alphabetical order:
 
 | File pattern | Provides |
 |---|---|
@@ -455,9 +461,11 @@ Check for `../cpp/unity-references/`. If the directory exists, load ALL files wi
 | `*-modernisation.md` | Project type preferences: which `std::*` types the project replaces with in-house equivalents (`[OVERRIDE]` entries) |
 | `*-reinvention.md` | Project reinvention catalogue: existing utilities to use instead of rolling new ones |
 
-Findings sourced from an overlay file are cited as `../cpp/unity-references/<file>.md > <section>` so the author can verify the convention and propose updates to the overlay rather than just rebutting the finding.
+Findings sourced from an overlay or profile file are cited as `../cpp/<name>-references/<file>.md > <section>` (for example `../cpp/unity-references/<file>.md > <section>`) so the author can verify the convention and propose updates to the overlay rather than just rebutting the finding.
 
 If no overlay directory exists, apply only the generic references loaded above.
+
+Where the loaded profile marks a rule `[OVERRIDE]` and names the generic rule it replaces, do not raise the generic finding; raise the profile rule in the STYLE category.
 
 ## Findings format
 
@@ -480,8 +488,9 @@ N. [SEVERITY] <file>:<line> -- <one-line rationale>
 
 **Report order:**
 1. `## Questions for the author` -- stranger-reviewer question pass (omit if empty).
-2. Numbered findings: MUST first, then SHOULD, then NICE, then PRE-EXISTING.
-3. Up to four closing sections (below).
+2. Numbered findings: MUST first, then SHOULD, then NICE, then PRE-EXISTING. These are L0-L3 design and correctness findings only; style findings never appear here.
+3. `## Style adherence (STYLE)` -- only when a profile is selected; see [Style adherence pass](#style-adherence-pass-style).
+4. Up to four closing sections (below).
 
 **Skip empty categories** -- if no MUST findings, omit the MUST section. **Do not invent findings to fill categories.** A short, accurate review beats a long padded one.
 
@@ -491,6 +500,85 @@ End the report with up to four sections:
 - **Self-evaluation** -- before submitting, re-read each MUST finding and ask: "Would this finding survive a five-minute conversation with the author?" If not, downgrade to SHOULD or drop. Note any downgrades here.
 - **Rewrite Brief** -- emit **only when one or more L0 or L1 MUST findings fire**. It is the sole input the executor persona (`cpp-simplify`) needs; write it so an agent with no other context can apply every change correctly. Follow the format in [Rewrite Brief format](#rewrite-brief-format) exactly.
 - **Suggested PR Summary** -- emit **only when one or more L0 prose-drift findings (item 6) fire**. The reviewer's stranger-reader pass has already produced the understanding needed; synthesise a clean trunk-state PR description from that understanding so the author has a draft to accept, edit, or decline rather than having to translate a prose-drift finding back into prose. Follow the format in [Suggested PR Summary format](#suggested-pr-summary-format) exactly. Omit entirely when no prose-drift findings fire.
+
+## Style adherence pass (STYLE)
+
+Runs only when the [profile selection](../cpp/references/cpp-profile-selection.md) selected a style profile. It is driven entirely by that profile's rules; the skill adds no style rules of its own.
+
+**Why a separate category, not a layer.** L0-L3 are gates: a MUST at one layer defers the layers below it. Style findings must never gate design findings and must never hide among them, so STYLE is a parallel category with its own tag and its own report section, not an L4. It runs after L0-L3 and its output never changes their tiers or the Rewrite Brief.
+
+**Tags.** `[STYLE / SHOULD]` and `[STYLE / NICE]` for decided rules (the profile states which); `[STYLE / CANDIDATE]` for provisional rules; `[STYLE / QUESTION]` for open items. Never `MUST`, never `PRE-EXISTING`.
+
+**Order of work.**
+
+1. **Mechanical first.** Run every `detect` command in the profile that has one, with the profile's `## Report configuration` placeholders filled. Do this before reading any file for style, so the tally does not depend on attention.
+2. **Judgement rules second**, on the files the diff touches: apply each `detect: judgement` rule while the file-by-file pass already has the file in context (no extra reads).
+3. **Open items last**: for each open rule that has hits in the changed lines, emit one question carrying the profile's stated preference. An open rule is never a finding and never contributes to a tally of violations.
+
+**Scope on a normal diff review.** Style findings cover **changed lines and files only**. Run the detect patterns against added lines (`git diff -U0 <range>` filtered to `^+`), or against the changed files and keep only hits on changed lines. Violations in untouched code are summarised as one tally line per rule and are **never blockers**, whatever the rule's severity. The only exception is when the review was explicitly asked to audit the whole codebase; that is the next mode.
+
+**Reporting: a tally, not an occurrence list.**
+
+```text
+## Style adherence (STYLE)
+Style profile: sub0 (declared in STYLE_GUIDE.md) | Overlay: none
+
+1. [STYLE / SHOULD] S04 include-style -- 3 in this diff (2 files); 34 more in untouched code (13 files)
+   Examples: include/sub0pipeline/job.hpp:4, src/x.cpp:2
+   Suggested: `#include "sub0pipeline/job.hpp"` (own header, library-rooted)
+2. [STYLE / CANDIDATE] S16 nodiscard -- pipeline.hpp:212 `bool joinOrphans()` returns a status the caller must see
+3. [STYLE / QUESTION] O1 constants-and-enumerators -- this diff adds `kBusy`; profile preference is no prefix. Confirm?
+
+Exempt, verify: `request_stop` (mirrors std::stop_source).
+```
+
+One numbered entry per rule, never per occurrence, with at most three representative `path:line` examples (numbered `N. [STYLE / ...]` lines keep the report parseable by the eval harness). A candidate (provisional rule) carries a one-line justification each; never report a bare count of functions lacking an attribute. Style findings are not deduplicated against L0-L3: if a generic finding already covers the same defect (for example a missing docblock is a generic MUST), report it once, under the generic finding, and omit it from the STYLE tally.
+
+## Whole-codebase style audit mode
+
+Invoke when the input is a **repository** (a path, not a diff) and the ask is to audit it, or bring it, to its house style. Read-only like every mode. Output is a report for a human to act on; this mode never edits.
+
+| Dimension | Code review | Style audit |
+|---|---|---|
+| Input | `git diff <range>` | A repository root |
+| Layers | L0-L3 + STYLE | STYLE only; no L0-L3 findings |
+| Scope | Changed lines | Every file under the profile's `SCOPE`, vendor trees excluded |
+| Untouched-code violations | Tally, not blockers | They are the subject; still never "blockers" |
+| Output | Findings + STYLE section | Tally, files per rule, exempt names, questions, order of work |
+
+**Procedure.**
+
+1. **Select the profile** per `../cpp/references/cpp-profile-selection.md`. If none is selected, stop and ask which profile to audit against; do not guess one. Record `git rev-parse --short=12 HEAD` and the date.
+2. **Fill the profile's `## Report configuration`** for this repository (library name, scope trees, public trees) and print it, so the run is reproducible.
+3. **Mechanical checks.** Run every `detect` command of every decided and provisional rule verbatim, and the open-item tally commands. Keep the raw output per rule. Where a pattern returns mostly false positives, say so and fix the pattern in the profile rather than discarding the rule.
+4. **Triage name lists.** For S01-style name lists, classify every name: *rename* (project-owned public name), *exempt, verify* (matches the profile's `EXEMPT` list or is required by a standard protocol), or *non-name* (a call into the standard library, CMake or a macro that the pattern caught). Report the three lists separately; only *rename* counts as a violation.
+5. **Judgement rules by sampling.** Read public headers in full, one file per read (the file-by-file discipline applies). When the public headers number 25 or fewer, read them all. Otherwise read the 10 largest plus every k-th remaining header in path order, where k = ceil(remaining / 10), and say so. Apply every `detect: judgement` rule to what was read. For provisional candidate lists (for example S16), read every hit. State, for each judgement rule, **how many files were read of how many exist** and that unread files are *not assessed*; never extrapolate a count to unread files and never present a sampled count as a total.
+6. **Open items.** For each open item: the preference, the current spread across the repository, and one question. No findings.
+7. **Report** in this shape:
+
+   ```text
+   ## Style audit: <repo> @ <SHA12>, <date>   (run <N>)
+   Style profile: <name> (<declared|detected>)   Overlay: <name|none>
+   Configuration: LIB=... SCOPE=... PUBLIC=...
+   Coverage: mechanical: <files scanned>; judgement: read <n> of <m> public headers (<which rule>); not assessed: <list>
+
+   ### Tally
+   | Rule | Status | Tier | Hits | Files | Kind | Examples (<=3 path:line) |
+   ### Files per rule        <- full file list for every rule with hits, in an appendix
+   ### Exempt, verify         <- names matching the exempt list, with the protocol each mirrors
+   ### Questions (open items) <- preference, spread, question
+   ### Suggested order of work
+   ### Machine-readable tally  <- fenced TSV: rule<TAB>hits<TAB>files
+   ```
+
+   `Kind` is `mechanical` (a scripted edit fixes it, no behaviour or API change), `api-breaking` (changes a name or path that callers use), or `judgement` (needs a person).
+8. **Suggested order of work.** Two groups, each item sized **S** (at most 10 occurrences in at most 3 files), **M** (up to 100 occurrences), or **L** (more), with the file count:
+   - **Group A, mechanical (no API effect):** include quoting and rooting, `@brief` removal, `#pragma once`, doc-tag additions that need no new wording, brace layout (better done by adding a formatter, see the profile's formatter question), internal-name fixes. Do these first; they are safe to review as bulk diffs.
+   - **Group B, API-breaking:** public renames (S01), header renames (S06), interface renames (S13). For each, give the number of call sites across the repository (`rg -c` per name), so the cost of the break is visible, and note which names are also used by downstream libraries when known. Do these only with the owner's agreement; each is its own change.
+   - **Group C, judgement:** missing documentation, `[[nodiscard]]` candidates, one-type-per-header splits.
+   Order inside a group by size, smallest first. Do not mix groups in one suggested commit.
+
+**Re-running to compare.** The audit is used iteratively. A re-run uses the same commands and the same placeholder values, and is given the previous report (or its machine-readable TSV block). It reports a **Delta** column per rule (`previous -> now`), lists files that newly appear under a rule (regressions) and files that left it (fixed), and flags any rule or placeholder whose definition changed since the previous run, because the counts are then not comparable. Keep the sampling rule deterministic (largest 10 plus every k-th) so the read set stays stable between runs unless files were added or removed. The report says plainly if the profile file changed between runs.
 
 ## Worked examples
 
