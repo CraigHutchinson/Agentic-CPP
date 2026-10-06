@@ -65,7 +65,7 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
 - **overrides:** `[OVERRIDE]` `cpp-idioms.md > Naming and call-site readability` (PascalCase examples). The verb/predicate shape rules there still apply.
 
 ### S02 doxygen-interfaces
-- **value:** every interface (what a library user or a Doxygen consumer sees) carries a Doxygen comment: `@param` for every parameter that is not self-evident, `@return`, `@tparam`, `@note` and so on as applicable, plus ownership, lifetime and thread-safety where they matter. Prose `//` comments are for internal code only. Directional `@param[in]` / `[out]` is **not** required; plain `@param` is the rule.
+- **value:** every interface (what a library user or a Doxygen consumer sees) carries a Doxygen comment: `@param` for every parameter, `@return` for every non-void result, `@tparam` for every template parameter a caller supplies, and `@note` and similar as applicable, plus ownership, lifetime and thread-safety where they matter. Exempt from the tag requirement: `override` declarations (they inherit the base documentation), defaulted or deleted special members, and operators with their conventional meaning. Prose `//` comments are for internal code only. Directional `@param[in]` / `[out]` is **not** required; plain `@param` is the rule.
 - **status:** decided
 - **why:** the header is the contract; a Doxygen consumer must see it, and the tags are what make it checkable.
 - **correct:** `/** Looks up a job by name. @param name Case-sensitive job name. @return The job, or an invalid handle. @note Thread-safe. */`
@@ -176,7 +176,7 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
 - **overrides:** `[OVERRIDE]` `cpp-review` step 8 / `cpp-idioms.md` (`<Basename>Tests.cpp`).
 
 ### S10 layout
-- **value:** 4-space indent, no tabs. Allman braces (opening brace on its own line) for namespaces, types, functions **and control flow**. Note: the Sub0Pipeline and Sub0Pub `STYLE_GUIDE.md` files say control flow takes a same-line brace; that is wrong for the headers, where all three libraries put control-flow braces on their own line (measured: 0 same-line control-flow braces under each `include/`). It is not uniformly true of the rest of the code: Sub0Pipeline's `.cpp` files and some namespace and type openings in its headers use same-line braces (see the audit tally), which this rule makes violations.
+- **value:** 4-space indent, no tabs. Allman braces (opening brace on its own line) for namespaces, types, functions **and control flow**. Measured 2026-10-06 over headers, sources, tests and examples, control-flow statements only: Sub0ECS 242 own-line and 0 same-line; Sub0Pub 53 own-line and 5 same-line; Sub0Pipeline 0 own-line and 158 same-line. Two of the three libraries are Allman in practice, including Sub0Pub against its own `STYLE_GUIDE.md`; Sub0Pipeline follows its guide's same-line rule and is the outlier to convert. The Sub0Pipeline and Sub0Pub guides, which say control flow takes a same-line brace, are superseded by this rule.
 - **status:** decided
 - **why:** one layout; matches the code.
 - **correct:** `if (x)` newline `{`
