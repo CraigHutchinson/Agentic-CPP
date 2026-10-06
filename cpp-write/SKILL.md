@@ -37,7 +37,9 @@ When the gap is minor enough that writing both variants in the file would help t
 
 ## Reference load (mandatory -- before writing any code)
 
-Load all four references in order before generating any code. They are the shared set also used by `cpp-review` and `cpp-simplify`; code written without them will not survive a review pass.
+**First, select the style profile and org overlay** per `../cpp/references/cpp-profile-selection.md` and say which were selected. If a profile is selected (for example `../cpp/sub0-references/sub0-profile.md`), load it now, before any other reference. **Where the profile and a generic reference or example disagree, the profile wins**: write `.hpp` / camelCase / `camelCase_` members or whatever the profile states, not what the generic example shows. The profile's "Superseded generic guidance" list names the generic text it replaces. Author to its decided rules from the first commit, treat provisional rules as guidance to apply with judgement, and ask rather than assume on open items.
+
+Then load all four references in order before generating any code. They are the shared set also used by `cpp-review` and `cpp-simplify`; code written without them will not survive a review pass.
 
 1. `../cpp/references/cpp-anti-patterns.md`
    -- what NOT to introduce; overriding principle: safety wins are never cosmetic,
@@ -61,7 +63,7 @@ Apply each step in order before and during writing. The steps mirror the four la
 **Highest-leverage step.** A utility written from scratch that already exists in the project produces a MUST finding in review and must be deleted or replaced.
 
 1. **Identify the shape** of what you are about to write -- "case-insensitive compare", "argv flag check", "global process-context cache", "small string container".
-2. **Grep the reinvention catalogue** (`../cpp/references/cpp-idioms.md > Reinvention catalogue`) for that shape. If `../cpp/unity-references/` exists, also check any `*-reinvention.md` file there -- it carries project-specific utilities that supersede the generic catalogue. If a project utility already covers it, use that utility and stop.
+2. **Grep the reinvention catalogue** (`../cpp/references/cpp-idioms.md > Reinvention catalogue`) for that shape. If the selected overlay (`../cpp/unity-references/` when nothing else is selected) exists, also check any `*-reinvention.md` file there -- it carries project-specific utilities that supersede the generic catalogue. If a project utility already covers it, use that utility and stop.
 
    **Iteration-shape pre-flight.** If the new method is named `ForEach*`, `Visit*`, `Iterate*`, `Each*`, or `Walk*` on a container-shaped type (registry, list, tree, intrusive chain), pause and ask: would `begin()` / `end()` returning a standard iterator be equivalent or strictly better? Iterators compose with `<algorithm>` / `<ranges>` / range-for and are the canonical iteration shape; a callback-only visitor is reinvention. Default to writing iterators; reach for a custom visitor only when iteration genuinely cannot be expressed as a forward iterator (live-mutation walk, multi-axis traversal, lazy on-demand state machine). Cite the existing in-tree iterator templates the new type should mirror.
 3. **Locate the correct home** for new code by asking: "If a teammate searched for this functionality six months from now, where would they look?"
@@ -135,7 +137,7 @@ Apply to every new or changed public declaration.
 
 **Org overlay check (mandatory -- do before writing any project type):**
 
-Check for `../cpp/unity-references/`. If the directory exists, load in order:
+Use the overlay selected by `../cpp/references/cpp-profile-selection.md` (with no selection: `../cpp/unity-references/`, as before). If the directory exists, load in order:
 1. Any `*-modernisation.md` -- project type preferences; entries marked `[OVERRIDE]` replace the `std::*` defaults in the tier tables.
 2. Any `*-reinvention.md` -- project reinvention catalogue; check before writing any new utility.
 3. Any `*-idioms.md` -- project idiom extensions.

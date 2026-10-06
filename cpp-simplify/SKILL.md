@@ -27,6 +27,7 @@ persona uses, so the executor applies changes that will pass a subsequent review
 
 1. `../cpp/references/cpp-anti-patterns.md`
    -- what NOT to raise / what NOT to introduce; overriding principle for safety vs cosmetic.
+   (Select the style profile first per `../cpp/references/cpp-profile-selection.md`; where the profile and these references disagree, the profile wins.)
 2. `../cpp/references/cpp-modernisation.md`
    -- C++17 idiom tiers, project-specific idiom overlays (if org overlay present), globals/testability seam pattern.
 3. `../cpp/references/cpp-idioms.md`

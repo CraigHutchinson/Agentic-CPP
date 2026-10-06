@@ -30,7 +30,7 @@ Follow in order. Do not skip steps.
 
 ### Step 2 -- Detect project variant
 
-Check whether an org overlay is present:
+Select the style profile and org overlay per `../cpp/references/cpp-profile-selection.md`. When a profile is selected (for example `sub0`), no org overlay is checked below unless the project declares one. Otherwise check whether an org overlay is present:
 
 ```bash
 ls ~/.cursor/skills/cpp/unity-references/ 2>/dev/null
