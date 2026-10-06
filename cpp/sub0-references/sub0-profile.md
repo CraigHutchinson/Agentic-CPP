@@ -22,7 +22,7 @@ For Sub0 projects, ignore these generic statements and examples:
 | `cpp-idioms.md` > Naming; `cpp-write` Step 4 and Examples B-D: `RegisterCallback`, `BuildIndex`, `IsEnabled()` | camelCase (`registerCallback`, `buildIndex`, `isEnabled()`) | S01 |
 | `cpp-idioms.md` > Naming ("`m_Name`, `s_Cache`, `g_Instance`") and the class-ordering example (`m_State`) | `camelCase_` data members | S12 |
 | `cpp-idioms.md` > finding table: `#ifndef` guard = NICE | `#pragma once` required, SHOULD | S05 |
-| `cpp-idioms.md` > Include order example (`"Foo.h"`, `"Core/String.h"`) | own headers library-rooted (`"sub0pipeline/job.hpp"`); the order itself is open (O7) | S04 |
+| `cpp-idioms.md` > Include order example (`"Foo.h"` first, then `<algorithm>`, then `"Core/String.h"`) | system and third-party first, then own headers library-rooted (`"sub0pipeline/job.hpp"`), each group alphabetical | S04, S17 |
 | `cpp-commenting.md` > Function / method doc template and severity rows: `@param[in\|out\|in,out]` is MUST | plain `@param` is the rule; directional tags are allowed, never required | S02 |
 | `cpp-commenting.md` > `@file` template using `@brief` | no `@brief` anywhere | S03 |
 | `cpp-review` step 8 / `cpp-idioms.md`: test file is `<Basename>Tests.cpp` | `test_<topic>.cpp` | S09 |
@@ -98,7 +98,7 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
 
 ### S04 include-style
 - **value:** `""` for the library's own headers, `<>` for system and third-party headers. Own-header paths are library-rooted (`"sub0pipeline/job.hpp"`), never bare relative (`"job.hpp"`, `"../job.hpp"`).
-- **status:** decided (quoting and rooting only; ordering is open, see O7)
+- **status:** decided (quoting and rooting; ordering is S17)
 - **why:** a bare relative include lets the compiler pick the wrong `job.hpp` or `types.hpp` when two directories contain one; that is ambiguous and prone to build-system error.
 - **correct:** `#include "sub0pipeline/job.hpp"` then `#include <vector>` then `#include <doctest/doctest.h>`
 - **incorrect:** `#include <sub0pipeline/job.hpp>`   `#include "job.hpp"`   `#include "../job.hpp"`
@@ -277,6 +277,29 @@ Triage classes for any name list: **rename** (project-owned public name), **exem
 - **severity:** STYLE/CANDIDATE. Report each candidate with a short justification ("pure query", "status return", ...); never report a count of functions lacking the attribute.
 - **overrides:** refines `cpp-idioms.md > [[nodiscard]] heuristics` for Sub0; where the two disagree on a case, this block wins.
 
+### S17 include-order
+- **value:** system and third-party headers (`<...>`) first, then the library's own headers (`"<lib>/..."`); one blank line between the two groups; each group alphabetical, compared without regard to case. Vendored third-party headers are third-party: `<doctest.h>`, not `"doctest.h"`. A source file's own header is not placed first.
+- **status:** decided
+- **why:** one order across the family, checkable by sorting. Because the corresponding header no longer comes first, each library needs a build target that compiles every public header on its own (Sub0Pipeline has `Sub0Pipeline_HeaderCheck`).
+- **correct:**
+  ```cpp
+  #include <atomic>
+  #include <doctest.h>
+  #include <vector>
+
+  #include "sub0pipeline/job.hpp"
+  #include "sub0pipeline/pipeline.hpp"
+  ```
+- **incorrect:** own headers before `<vector>`; `#include "doctest.h"`; an unsorted group.
+- **detect:** judgement over each file's leading include block (the first run of `#include` and blank lines): every `<...>` line precedes every `"..."` line, and each group is sorted. Candidates:
+  ```bash
+  rg -n '#include "(doctest|nanobench|catch|gtest|benchmark)[^"]*"' $G $SCOPE          # vendored third-party in quotes
+  rg -n -U '#include "[^"\n]+"\s*\n(?:\s*\n)*#include <' $G $SCOPE                    # a system header after an own header
+  ```
+  False positives: includes inside `#if` blocks further down the file, which keep their place; a `#define` that must precede a header (for example `DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN`) stays immediately before the include block, not inside it; platform headers with a required order (`freertos/FreeRTOS.h` before the other FreeRTOS headers) happen to sort correctly but must be checked.
+- **severity:** STYLE/NICE
+- **overrides:** `[OVERRIDE]` `cpp-idioms.md > Include order` (corresponding header first, then standard library, then project).
+
 ## Open items
 
 Report each as a **question** carrying the stated preference. Never a finding, never counted as a violation. Tally the current spread so the owner can see it.
@@ -334,14 +357,6 @@ Report each as a **question** carrying the stated preference. Never a finding, n
 - **status:** open
 - **why:** reproducibility versus duplication.
 - **detect:** `rg -n 'FetchContent|CPM|vendor' -g CMakeLists.txt -g '*.cmake' .`
-- **severity:** STYLE/QUESTION
-- **overrides:** none.
-
-### O7 include-order
-- **value:** preference: undecided. Only quoting and rooting (S04) are decided. Today: ECS std first then project; Pub project first; generic corresponding-header first.
-- **status:** open
-- **why:** three orders in use.
-- **detect:** judgement; do not tally.
 - **severity:** STYLE/QUESTION
 - **overrides:** none.
 
