@@ -21,6 +21,13 @@ Skip for: pure bug fixes, test-only changes, mechanical renames with zero semant
 
 Also invoke in **whole-codebase style audit mode** when asked to audit or bring a repository to its house style. See [Whole-codebase style audit mode](#whole-codebase-style-audit-mode). Its input is a repository, so the skip list above does not apply to it.
 
+For a review of the *system* rather than a change, use the companion skill **cpp-architecture-review**. It
+looks at the approach and algorithm, algorithmic redundancy, the same problem solved differently across
+modules or repositories, cross-repository DRY, contracts that the next milestone builds on, and claims
+against code. It consolidates the findings into canonical decisions and an ordered plan, and consumes this
+skill's per-repository L0-L3 findings as one of its inputs. Suggest it at phase boundaries and after
+bursts of parallel work, even when the user asked only for a code review.
+
 ## Gaps and assumptions
 
 When a finding depends on a design choice that the loaded references do not cover, do not raise an assertion as if the directive exists. Surface the ambiguity instead:

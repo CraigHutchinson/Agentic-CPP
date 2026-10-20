@@ -109,6 +109,7 @@ Three skills manage the C++ authoring and review workflow. Full reference materi
 | Before writing a new class, public API, or module | **cpp-write** | Proactively before authoring |
 | After substantive C++ changes | **cpp-review** | Proactively after authoring |
 | Before implementing -- to review a plan or design doc | **cpp-review** (plan mode) | Explicitly, with plan doc as input |
+| At a phase boundary, or after parallel work across modules or repositories | **cpp-architecture-review** | Proactively; consolidated decisions and plan go in `docs/reviews/` |
 | After L0/L1 MUST findings | **cpp-simplify** | With Rewrite Brief from cpp-review as input |
 
 The `.cursor/rules/cpp-standards.mdc` project rule auto-attaches the most important constraints to Agent sessions when C++ files are in context. The skills carry the full reference material and worked examples.
