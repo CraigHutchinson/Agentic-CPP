@@ -54,6 +54,9 @@ finding, a proposed fix, an owner (which repository) and an effort (S, M, L).
   - Which better models should exist beside the frozen reference?
   
   Require an error-against-cost frontier measured against the reference before adopting any of them.
+  Prefer **continuous, target-driven** levers (an error estimator plus a deterministic controller meeting a
+  requested tolerance or compute budget) over fixed settings or discrete tiers, so compute is paid only
+  where the problem needs it.
 - **Hot paths:** per-call allocation, work that can be prepared once and reused, branchy code where a
   status aggregate would do, and an ordinary library call (`fmax`, `hypot`) that compiles to a slow
   external call on one toolchain.
