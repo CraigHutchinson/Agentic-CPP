@@ -44,6 +44,16 @@ finding, a proposed fix, an owner (which repository) and an effort (S, M, L).
   known method, with a citation where useful, and say why the chosen one is better or worse. For example:
   a tree-sparse factorisation against a dense one, a windowed search against a brute-force scan, a
   projection along the support normal against a vertical one.
+- **Ports are a floor, not a ceiling.** Code ported for bit-identical parity inherits the upstream
+  implementation's compromises: its arithmetic semantics, fixed resolutions and step sizes, cold-started
+  iterations, explicit methods on stiff problems, and one fidelity for every use. Once a unit is stable,
+  ask:
+  - Which of those choices limit us?
+  - What levers (step, resolution, tolerance, warm start, decimation, arithmetic mode, Jacobian reuse)
+    would trade accuracy for runtime?
+  - Which better models should exist beside the frozen reference?
+  
+  Require an error-against-cost frontier measured against the reference before adopting any of them.
 - **Hot paths:** per-call allocation, work that can be prepared once and reused, branchy code where a
   status aggregate would do, and an ordinary library call (`fmax`, `hypot`) that compiles to a slow
   external call on one toolchain.
